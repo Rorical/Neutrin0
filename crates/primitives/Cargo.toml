@@ -1,0 +1,23 @@
+[package]
+name          = "neutrin0-primitives"
+description   = "Shared Neutrin0 protocol types and constants: hashes, domain tags, programs, parameters and the chain specification."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["blake3/std", "borsh/std"]
+
+[dependencies]
+blake3 = { workspace = true }
+borsh  = { workspace = true }
+
+[lints]
+workspace = true

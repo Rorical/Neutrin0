@@ -1,0 +1,31 @@
+[package]
+name          = "neutrin0-network"
+description   = "libp2p transport for Neutrin0: discovery, gossip topics, request/response protocols and the sync state machine."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[lints]
+workspace = true
+
+[dependencies]
+borsh.workspace = true
+futures = "0.3.34"
+libp2p = { version = "0.57.0", features = ["tokio", "gossipsub", "request-response", "identify", "kad", "yamux", "noise", "tcp", "quic", "dns", "macros", "ping"] }
+neutrin0-consensus-types.workspace = true
+neutrin0-light-client.workspace = true
+neutrin0-primitives.workspace = true
+thiserror.workspace = true
+tokio = { version = "1.53.1", features = ["full"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tokio-util = { version = "0.7.19", features = ["compat"] }
+tokio = { version = "1.53.1", features = ["full", "test-util"] }
+tracing-subscriber = "0.3.23"

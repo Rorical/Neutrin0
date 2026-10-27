@@ -1,0 +1,70 @@
+[package]
+name          = "neutrin0-node"
+description   = "The neutrin0-node binary: configuration, chain-spec loading, genesis, chain backend, metrics and supervision."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+cuda = ["neutrin0-runtime-host/cuda"]
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "neutrin0-node"
+path = "src/main.rs"
+
+[dependencies]
+async-trait                       = "0.1.92"
+borsh.workspace                   = true
+serde_json.workspace              = true
+hex.workspace                     = true
+getrandom.workspace               = true
+neutrin0-consensus-engine.workspace = true
+neutrin0-consensus-fork-choice.workspace = true
+neutrin0-consensus-types.workspace  = true
+neutrin0-crypto.workspace           = true
+neutrin0-keystore.workspace         = true
+neutrin0-signer.workspace           = true
+neutrin0-mempool.workspace        = true
+neutrin0-light-client.workspace   = true
+neutrin0-network.workspace        = true
+neutrin0-primitives.workspace     = true
+neutrin0-proof-system.workspace   = true
+neutrin0-prover-chunk.workspace   = true
+neutrin0-rpc.workspace            = true
+neutrin0-runtime-abi.workspace    = true
+neutrin0-runtime-host.workspace   = true
+sp1-sdk                           = { workspace = true }
+neutrin0-storage                  = { workspace = true, features = ["rocksdb"] }
+neutrin0-sync.workspace           = true
+neutrin0-trie.workspace           = true
+serde                             = { version = "1.0.229", features = ["derive"] }
+thiserror.workspace               = true
+tokio                             = { version = "1.53.1", features = ["macros", "rt-multi-thread", "sync", "signal", "time", "fs", "net", "io-util"] }
+toml                              = "1.1.6"
+tracing                           = "0.1.44"
+tracing-subscriber                = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
+zeroize.workspace                 = true
+
+sysinfo = "=0.30.13"
+
+[dev-dependencies]
+neutrin0-consensus-engine = { workspace = true, features = ["test-signing"] }
+neutrin0-evm-runtime-core = { workspace = true }
+neutrin0-runtime-system = { workspace = true }
+jsonrpsee = { workspace = true }
+alloy-primitives = { version = "=1.7.3", default-features = false }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+k256 = { workspace = true }
+neutrin0-vrf = { workspace = true }
+tokio                 = { version = "1.53.1", features = ["full", "test-util"] }
+neutrin0-runtime-core = { workspace = true, features = ["host"] }

@@ -1,0 +1,29 @@
+[package]
+name          = "neutrin0-keystore"
+description   = "EIP-2335 encrypted BLS keystores."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[dependencies]
+neutrin0-crypto       = { workspace = true }
+neutrin0-primitives   = { workspace = true }
+aes                   = { workspace = true }
+ctr                   = { workspace = true }
+scrypt                = { workspace = true }
+unicode-normalization = { workspace = true }
+getrandom             = { workspace = true }
+hex                   = { workspace = true }
+serde                 = { workspace = true }
+serde_json            = { workspace = true }
+thiserror             = { workspace = true }
+zeroize               = { workspace = true }
+
+[lints]
+workspace = true

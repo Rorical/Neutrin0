@@ -1,0 +1,8 @@
+name = "t"
+chain_id = 9
+genesis_time = 0
+genesis_gas_limit = 1
+[[validators]]
+pubkey_hex = "00"
+pop_hex = "00"
+effective_stake = 1

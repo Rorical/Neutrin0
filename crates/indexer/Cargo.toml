@@ -1,0 +1,41 @@
+[package]
+name = "neutrin0-indexer"
+description = "PostgreSQL indexer and GraphQL API over a Neutrin0 node's public RPC."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish.workspace = true
+
+[dependencies]
+neutrin0-primitives.workspace = true
+neutrin0-crypto.workspace = true
+neutrin0-runtime-abi.workspace = true
+neutrin0-rpc.workspace = true
+async-trait.workspace = true
+jsonrpsee.workspace = true
+borsh.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net"] }
+tracing.workspace = true
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt"] }
+toml = "=1.1.6"
+async-graphql = { version = "=7.2.1", default-features = false }
+axum = { version = "=0.7.9", features = ["json", "http1", "tokio"] }
+sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json"] }
+tower-http = { version = "=0.6.11", features = ["cors"] }
+alloy-primitives = { version = "=1.7.3", default-features = false }
+
+[dev-dependencies]
+getrandom.workspace = true
+reqwest = { version = "=0.12.28", default-features = false, features = ["json"] }
+
+[lints]
+workspace = true

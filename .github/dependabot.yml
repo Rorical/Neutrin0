@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Rust dependencies are pinned through Cargo.lock and moved deliberately
+  # (SP1 and the Guest patches must change together); cargo-deny in CI reports
+  # security advisories against the locked versions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

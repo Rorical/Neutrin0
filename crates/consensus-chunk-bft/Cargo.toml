@@ -1,0 +1,25 @@
+[package]
+name          = "neutrin0-consensus-chunk-bft"
+description   = "Chunk-level BFT: round leaders, vote accumulation, pacing and certificate verification."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["neutrin0-consensus-types/std", "neutrin0-crypto", "neutrin0-primitives/std"]
+
+[dependencies]
+borsh                    = { workspace = true }
+neutrin0-consensus-types = { workspace = true }
+neutrin0-crypto          = { workspace = true, optional = true }
+neutrin0-primitives      = { workspace = true }
+
+[lints]
+workspace = true

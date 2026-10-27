@@ -1,0 +1,51 @@
+[package]
+name          = "neutrin0-consensus-engine"
+description   = "Neutrin0 consensus engine: production, proof-following import, chunk BFT, finalization, history and signing journals."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "neutrin0-primitives/std",
+    "neutrin0-consensus-types/std",
+    "borsh/std",
+]
+# Signing helpers that bypass the signing journal, for tests only.
+test-signing = []
+
+[dependencies]
+neutrin0-runtime-core = { workspace = true, features = ["host"] }
+neutrin0-primitives       = { workspace = true }
+neutrin0-consensus-chunk-bft = { workspace = true }
+neutrin0-consensus-fork-choice = { workspace = true }
+neutrin0-consensus-types  = { workspace = true }
+neutrin0-consensus-vrf    = { workspace = true }
+neutrin0-crypto           = { workspace = true }
+neutrin0-proof-system     = { workspace = true }
+neutrin0-prover-chunk     = { workspace = true }
+neutrin0-runtime-abi      = { workspace = true }
+neutrin0-storage          = { workspace = true }
+neutrin0-trie             = { workspace = true, features = ["store"] }
+neutrin0-vrf              = { workspace = true, features = ["std"] }
+borsh                     = { workspace = true }
+
+[dev-dependencies]
+neutrin0-consensus-engine = { workspace = true, features = ["test-signing"] }
+neutrin0-storage = { workspace = true, features = ["rocksdb"] }
+neutrin0-evm-runtime-core = { workspace = true }
+neutrin0-runtime-system = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-primitives = { version = "=1.7.3", default-features = false }
+k256 = { workspace = true }
+
+[lints]
+workspace = true

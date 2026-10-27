@@ -1,0 +1,207 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/primitives",
+    "crates/crypto",
+    "crates/vrf",
+    "crates/trie",
+    "crates/storage",
+    "crates/runtime-abi",
+    "crates/consensus-types",
+    "crates/consensus-vrf",
+    "crates/consensus-fork-choice",
+    "crates/consensus-chunk-bft",
+    "crates/proof-system",
+    "crates/prover-chunk",
+    "crates/consensus-engine",
+    "crates/network",
+    "crates/sync",
+    "crates/mempool",
+    "crates/light-client",
+    "crates/rpc",
+    "crates/node",
+    "crates/cli",
+    "crates/indexer",
+    "crates/runtime-core",
+    "crates/runtime-system",
+    "crates/runtimes/neutrin0-evm/core",
+    "crates/runtimes/neutrin0-evm/master",
+    "crates/runtime-host",
+    "crates/keystore",
+    "crates/signer",
+]
+# The SP1 Guest crates (crates/runtimes/neutrin0-evm/guest, crates/prover-chunk/guest)
+# are built by runtime-host's build script under the `succinct` toolchain; they
+# are not members.
+
+[workspace.package]
+version       = "0.1.0"
+edition       = "2024"
+# Compatible with the compiler bundled with SP1; the host toolchain is pinned separately.
+rust-version  = "1.96"
+authors       = ["The Neutrin0 Authors"]
+license       = "MIT OR Apache-2.0"
+repository    = "https://github.com/Rorical/Neutrin0"
+homepage      = "https://github.com/Rorical/Neutrin0"
+documentation = "https://github.com/Rorical/Neutrin0"
+readme        = "README.md"
+publish       = false
+
+[workspace.lints.rust]
+# CI promotes every warning to an error with `-D warnings`.
+unsafe_op_in_unsafe_fn      = "deny"
+unreachable_pub             = "warn"
+missing_docs                = "warn"
+rust_2018_idioms            = { level = "warn", priority = -1 }
+rust_2024_compatibility     = { level = "warn", priority = -1 }
+unused_must_use             = "deny"
+# The SP1 guest target reports vendor `succinct`, which rustc's built-in
+# check-cfg list does not know.
+unexpected_cfgs             = { level = "warn", check-cfg = ['cfg(target_vendor, values("succinct"))'] }
+
+[workspace.lints.clippy]
+# Pedantic-ish but not painful. We tighten further inside each crate if needed.
+all                         = { level = "warn", priority = -1 }
+pedantic                    = { level = "warn", priority = -1 }
+nursery                     = { level = "warn", priority = -1 }
+cargo                       = { level = "warn", priority = -1 }
+# Noisy, low-signal exceptions.
+module_name_repetitions     = "allow"
+must_use_candidate          = "allow"
+missing_errors_doc          = "allow"
+missing_panics_doc          = "allow"
+multiple_crate_versions     = "allow"
+cargo_common_metadata       = "allow"
+
+[workspace.dependencies]
+# In-tree crates — declared here so every dependent uses the same path.
+neutrin0-primitives             = { path = "crates/primitives",             version = "0.1.0", default-features = false }
+neutrin0-crypto                 = { path = "crates/crypto",                 version = "0.1.0", default-features = false }
+neutrin0-vrf                    = { path = "crates/vrf",                    version = "0.1.0", default-features = false }
+neutrin0-trie                   = { path = "crates/trie",                   version = "0.1.0", default-features = false }
+neutrin0-storage                = { path = "crates/storage",                version = "0.1.0" }
+neutrin0-runtime-abi            = { path = "crates/runtime-abi",            version = "0.1.0", default-features = false }
+neutrin0-consensus-types        = { path = "crates/consensus-types",        version = "0.1.0", default-features = false }
+neutrin0-consensus-vrf          = { path = "crates/consensus-vrf",          version = "0.1.0" }
+neutrin0-consensus-fork-choice  = { path = "crates/consensus-fork-choice",  version = "0.1.0" }
+neutrin0-consensus-chunk-bft    = { path = "crates/consensus-chunk-bft",    version = "0.1.0" }
+neutrin0-proof-system           = { path = "crates/proof-system",           version = "0.1.0", default-features = false }
+neutrin0-prover-chunk           = { path = "crates/prover-chunk",           version = "0.1.0" }
+neutrin0-consensus-engine       = { path = "crates/consensus-engine",       version = "0.1.0" }
+neutrin0-node                   = { path = "crates/node",                   version = "0.1.0" }
+neutrin0-network                = { path = "crates/network",                version = "0.1.0" }
+neutrin0-sync                   = { path = "crates/sync",                   version = "0.1.0" }
+neutrin0-mempool                = { path = "crates/mempool",                version = "0.1.0" }
+neutrin0-light-client           = { path = "crates/light-client",           version = "0.1.0", default-features = false }
+neutrin0-rpc                    = { path = "crates/rpc",                    version = "0.1.0" }
+neutrin0-runtime-core           = { path = "crates/runtime-core",           version = "0.1.0", default-features = false }
+neutrin0-runtime-host           = { path = "crates/runtime-host",           version = "0.1.0", default-features = false }
+neutrin0-keystore               = { path = "crates/keystore",               version = "0.1.0" }
+neutrin0-signer                 = { path = "crates/signer",                 version = "0.1.0" }
+
+neutrin0-runtime-system = { path = "crates/runtime-system", version = "0.1.0", default-features = false }
+neutrin0-evm-runtime-core = { path = "crates/runtimes/neutrin0-evm/core", version = "0.1.0", default-features = false }
+neutrin0-evm-runtime-master = { path = "crates/runtimes/neutrin0-evm/master", version = "0.1.0", default-features = false }
+revm = { version = "=43.0.0", default-features = false, features = ["optional_balance_check", "optional_no_base_fee", "optional_eip3607", "optional_fee_charge"] }
+alloy-consensus = { version = "=2.0.4", default-features = false, features = ["k256"] }
+alloy-eips = { version = "=2.0.4", default-features = false }
+
+# External — current stable baselines; committed lockfiles fix exact resolution.
+# Canonical wire codec. See docs/design/05-block-format.md.
+borsh               = { version = "1.8.1",  default-features = false, features = ["derive"] }
+
+# SP1 zkVM — hard environment dependency (see AGENTS.md).
+sp1-sdk             = { version = "=6.10.0", default-features = false, features = ["blocking"] }
+sp1-build           = { version = "=6.10.0" }
+# `sp1-lib` exposes the Poseidon2 syscall wrapper used by the trie
+# crate when compiled into the SP1 Guest. Outside the zkVM the syscall
+# is unreachable, so this dep is target-gated at the consumer crate.
+sp1-lib             = { version = "=6.10.0" }
+
+# Host Poseidon2 uses the canonical permutation of the pinned SP1 precompile.
+slop-algebra        = { version = "=6.10.0" }
+slop-koala-bear     = { version = "=6.10.0" }
+slop-symmetric      = { version = "=6.10.0" }
+
+# no_std + alloc compatible lazy-init for the trie's host-side
+# Poseidon2 permutation singleton.
+once_cell           = { version = "1.21.4", default-features = false, features = ["alloc", "race"] }
+
+# Binary serde codec for SP1 receipts and on-disk verifying-key caches.
+# Release 3.0.0 intentionally fails compilation; 2.0.1 is the latest usable release.
+bincode             = { version = "2.0.1", default-features = false, features = ["alloc", "serde"] }
+
+# WASM execution engine for the dynamic runtime host. `cranelift`
+# default feature is heavy; we keep it on because we need the JIT/AOT
+# compiler to execute master.wasm.
+wasmtime            = { version = "49.0.2", default-features = false, features = ["cranelift", "runtime"] }
+
+# no_std allocator for the `wasm32-unknown-unknown` builds of master.
+dlmalloc            = { version = "0.2.14", default-features = false }
+
+blake3              = { version = "1.8.7",  default-features = false }
+sha2                = { version = "0.11.0", default-features = false }
+tiny-keccak         = { version = "2.0.2",  features = ["keccak"] }
+
+blst                = { version = "0.3.17" }
+k256                = { version = "0.14.0", default-features = false, features = ["ecdsa", "alloc"] }
+
+zeroize             = { version = "1.9.0",  default-features = false, features = ["derive"] }
+rand_core           = { version = "0.10.1", default-features = false }
+rand_chacha         = { version = "0.10.0" }
+getrandom           = { version = "0.4.3", features = ["sys_rng"] }
+rocksdb             = { version = "0.25.0", default-features = false, features = ["bindgen-runtime"] }
+
+thiserror           = { version = "2.0.21" }
+hex                 = { version = "0.4.3",  default-features = false, features = ["alloc"] }
+
+# EIP-2335 validator keystores.
+aes                   = { version = "0.8.4" }
+ctr                   = { version = "0.9.2" }
+scrypt                = { version = "0.11.0", default-features = false }
+unicode-normalization = { version = "0.1.25" }
+
+# Mutually authenticated TLS between a node and its remote signer.
+rustls              = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen               = { version = "0.13.2" }
+toml                = { version = "1.1.6" }
+tracing-subscriber  = { version = "0.3.23", features = ["env-filter", "fmt"] }
+
+# JSON-RPC server for the user-facing RPC layer. Same library Substrate
+# and Reth use; supports HTTP and WebSocket on a single port.
+jsonrpsee           = { version = "0.26.1", default-features = false, features = ["server", "client", "macros"] }
+serde               = { version = "1.0.229",  features = ["derive"] }
+serde_json          = { version = "1.0.151" }
+async-trait         = { version = "0.1.92" }
+tokio               = { version = "1.53.1", features = ["macros", "rt-multi-thread", "sync", "signal", "time", "fs"] }
+tracing             = { version = "0.1.44" }
+
+[profile.dev]
+opt-level     = 0
+debug         = "line-tables-only"
+overflow-checks = true
+
+# Compile all third-party dependencies (notably SP1's prover/recursion
+# stack) with release optimisations even in dev/test profiles. Our own
+# workspace crates stay at opt-level=0 for fast incremental builds.
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
+
+[profile.release]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+debug         = "line-tables-only"
+# Host receipt verification catches upstream panics on adversarial proof bytes.
+panic         = "unwind"
+overflow-checks = true
+
+# Runtime master WASM artifacts. Governed code hashes cover every byte and the
+# program lane distributes them on chain against `MAX_PROGRAM_BYTES`, so they
+# carry no debug information. Rebuild with `--profile runtime-artifact`.
+[profile.runtime-artifact]
+inherits = "release"
+panic    = "abort"
+debug    = false
+strip    = "debuginfo"

@@ -1,0 +1,36 @@
+[package]
+name          = "neutrin0-rpc"
+description   = "Neutrin0 JSON-RPC server and client, including the Ethereum facade."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[dependencies]
+neutrin0-crypto = { workspace = true }
+neutrin0-primitives       = { workspace = true }
+neutrin0-consensus-types  = { workspace = true }
+neutrin0-runtime-abi      = { workspace = true }
+async-trait               = { workspace = true }
+borsh                     = { workspace = true }
+hex                       = { workspace = true }
+jsonrpsee                 = { workspace = true }
+serde                     = { workspace = true }
+serde_json                = { workspace = true }
+thiserror                 = { workspace = true }
+tokio                     = { workspace = true, features = ["net", "io-util", "time"] }
+# The listener's own accept loop, which jsonrpsee serves per connection.
+http                      = "1.5.0"
+hyper                     = "1.11.1"
+tower                     = { version = "0.5.3", features = ["util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "test-util"] }
+
+[lints]
+workspace = true

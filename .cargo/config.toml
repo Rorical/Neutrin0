@@ -1,0 +1,34 @@
+# Host-CPU tuning for native x86_64-linux builds.
+#
+# This enables rustc to use whatever vector ISA the build host's CPU
+# supports — SSE4.2, AVX2, AVX-512 — for the SP1 CPU prover hot paths
+# (Plonky3 FFTs, Poseidon2, BabyBear field arithmetic). On an
+# AVX-512-capable Xeon this is a substantial speedup for proof
+# generation; on a baseline x86-64-v2 host it falls back to whatever
+# the host actually has.
+#
+# Scope: `[target.x86_64-unknown-linux-gnu]` applies ONLY when that
+# triple is the compilation target. The SP1 Guest
+# (`riscv64im-succinct-zkvm-elf`, built by `crates/runtime-host/build.rs`
+# via `sp1-build`) and the WASM master cdylib (`wasm32-unknown-unknown`)
+# are unaffected — a host-CPU baseline is meaningless for those.
+#
+# Why not `-C target-feature=+avx512f`?
+#   `target-cpu=native` lets each host opt in to its real capabilities.
+#   Forcing `+avx512f` would SIGILL on CI runners and dev machines
+#   without AVX-512 — e.g. GitHub's `ubuntu-latest` runners mix Intel
+#   Ice Lake and AMD EPYC SKUs depending on availability.
+#
+# Trade-off: binaries produced here are not portable to hosts with a
+# weaker ISA. That is fine because:
+#   - `target/` is gitignored,
+#   - CI builds and runs on the same runner (no artifact distribution),
+#   - the node binary is meant to be rebuilt from source per host.
+#
+# To opt out for a single build, set
+#   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=""
+# in the environment. To opt out permanently, override this section in
+# `~/.cargo/config.toml`.
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]

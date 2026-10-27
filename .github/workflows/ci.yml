@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+  SP1_PROVER: cpu
+
+jobs:
+  supply-chain:
+    name: licenses, bans and sources (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources
+
+  advisories:
+    name: security advisories (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: crates/prover-chunk/guest/Cargo.toml
+          command: check advisories
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: crates/runtimes/neutrin0-evm/guest/Cargo.toml
+          command: check advisories
+
+  monitoring:
+    name: monitoring rules (promtool)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check rules, alert tests and dashboard queries
+        run: PROMTOOL="$(ops/monitoring/install-promtool.sh "$RUNNER_TEMP")" ops/monitoring/check.sh
+
+  rust:
+    name: rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libclang-dev
+
+      - name: Install SP1 toolchain
+        run: |
+          curl -fsSL https://sp1up.succinct.xyz | bash
+          echo "$HOME/.sp1/bin" >> $GITHUB_PATH
+          "$HOME/.sp1/bin/sp1up" --version 6.10.0
+
+      - name: Build
+        run: cargo build --locked
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Lint metric exposition
+        run: |
+          NEUTRIN0_METRICS_FIXTURE="$RUNNER_TEMP/metrics.prom" cargo test --locked -p neutrin0-node \
+            complete_exposition_fixture_has_unique_samples_and_coherent_coverage
+          "$(ops/monitoring/install-promtool.sh "$RUNNER_TEMP")" check metrics < "$RUNNER_TEMP/metrics.prom"
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: CUDA client integration (no GPU required)
+        run: |
+          cargo test --locked -p neutrin0-node -p neutrin0-runtime-host --features neutrin0-node/cuda
+          cargo clippy --locked --all-targets -p neutrin0-node -p neutrin0-runtime-host --features neutrin0-node/cuda -- -D warnings
+
+      - name: Docs
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --workspace
+
+      - name: Format
+        run: cargo fmt --all -- --check

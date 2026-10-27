@@ -1,0 +1,38 @@
+[package]
+name          = "neutrin0-signer"
+description   = "neutrin0-signer: remote BLS signer with its own slashing-protection journal."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[dependencies]
+neutrin0-consensus-engine = { workspace = true }
+neutrin0-consensus-types  = { workspace = true }
+neutrin0-crypto           = { workspace = true }
+neutrin0-keystore         = { workspace = true }
+neutrin0-primitives       = { workspace = true }
+neutrin0-storage          = { workspace = true, features = ["rocksdb"] }
+borsh                     = { workspace = true }
+hex                       = { workspace = true }
+rustls                    = { workspace = true }
+serde                     = { workspace = true }
+thiserror                 = { workspace = true }
+toml                      = { workspace = true }
+tracing                   = { workspace = true }
+tracing-subscriber        = { workspace = true }
+zeroize                   = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.5", default-features = false, features = ["process", "std"] }
+
+[dev-dependencies]
+rcgen = { workspace = true }
+
+[lints]
+workspace = true

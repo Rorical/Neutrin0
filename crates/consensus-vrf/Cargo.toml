@@ -1,0 +1,31 @@
+[package]
+name          = "neutrin0-consensus-vrf"
+description   = "Consensus use of the VRF: proposer claims, validator-set indexing and vote-aggregator selection."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["neutrin0-primitives/std", "neutrin0-consensus-types/std"]
+
+[dependencies]
+neutrin0-consensus-types = { workspace = true }
+neutrin0-crypto          = { workspace = true }
+neutrin0-primitives      = { workspace = true }
+neutrin0-vrf             = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+# Tests use rand_chacha so they can feed
+# `neutrin0-crypto::SecretKey::generate` deterministic seeds.
+rand_chacha              = { workspace = true }
+rand_core                = { workspace = true }
+
+[lints]
+workspace = true

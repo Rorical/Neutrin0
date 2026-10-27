@@ -1,0 +1,23 @@
+chain_id = 9
+role = "full"
+chain_spec_path = "chain-spec.toml"
+network_key_path = "keys/full.p2p"
+
+[bootstrap]
+trusted_checkpoint_path = "checkpoint.borsh"
+trusted_at = 1760000000
+
+[proving]
+backend = "cpu"
+concurrency = 2
+capacity = 16
+prover_address = "000000000000000000000000abababababababababababababababababababab"
+
+[storage]
+min_free_bytes = 10737418240
+halt_free_bytes = 2147483648
+
+[execution]
+mode = "proof_follow"
+query_fuel = 2000000000
+validate_tx_fuel = 100000000

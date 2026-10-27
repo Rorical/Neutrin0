@@ -1,0 +1,20 @@
+# Keep this desired inventory separate from service discovery. Update it with
+# targets.json when deliberately changing the monitored membership.
+groups:
+  - name: neutrin0-expected-targets
+    rules:
+      - record: neutrin0_expected_target
+        expr: vector(1)
+        labels: {job: neutrin0,node: validator-1,role: validator}
+      - record: neutrin0_expected_target
+        expr: vector(1)
+        labels: {job: neutrin0,node: validator-2,role: validator}
+      - record: neutrin0_expected_target
+        expr: vector(1)
+        labels: {job: neutrin0,node: validator-3,role: validator}
+      - record: neutrin0_expected_target
+        expr: vector(1)
+        labels: {job: neutrin0,node: validator-4,role: validator}
+      - record: neutrin0_expected_target
+        expr: vector(1)
+        labels: {job: neutrin0,node: reporter-1,role: reporter}

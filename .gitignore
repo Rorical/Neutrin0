@@ -1,0 +1,35 @@
+# Rust build output. Cargo.lock files are committed: the workspace and both
+# SP1 Guest crates are built with `--locked`.
+/target/
+**/target/
+**/*.rs.bk
+
+# Editors, operating systems and local tool indexes
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.claude/
+.codegraph/
+
+# Local environment and configuration
+/.env
+/.env.*
+/indexer.toml
+
+# Coverage and profiling
+*.profraw
+*.profdata
+lcov.info
+/coverage/
+
+# Scratch output
+*.tmp
+*.log
+nohup.out
+__pycache__/
+
+# Private working material
+/.plans/

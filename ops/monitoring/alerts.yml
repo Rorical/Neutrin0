@@ -1,0 +1,170 @@
+groups:
+  - name: neutrin0-staging
+    rules:
+      - alert: Neutrin0NodeDown
+        expr: up{job="neutrin0"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: 'Node {{ $labels.node }} cannot be scraped'
+          description: 'Inspect process exit code and named critical-worker logs. The metrics listener stops with the node.'
+      - alert: Neutrin0TargetsMissing
+        expr: absent(up{job="neutrin0"})
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'No Neutrin0 scrape targets are configured'}
+      - alert: Neutrin0ExpectedTargetMissing
+        expr: neutrin0_expected_target unless on(job,node) up{job="neutrin0"}
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Expected node {{ $labels.node }} disappeared from service discovery'}
+      - alert: Neutrin0NodeNotReady
+        expr: neutrin0_ready == 0 and on(instance,job) up{job="neutrin0"} == 1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Node {{ $labels.node }} is not ready'
+          description: 'Inspect neutrin0_readiness_reason and sync progress. Startup/bootstrap may legitimately take longer on CPU.'
+      - alert: Neutrin0HealthSamplerStale
+        expr: neutrin0_health_sample_age_seconds > 5
+        for: 30s
+        labels: {severity: critical}
+        annotations: {summary: 'Health sampler stopped progressing'}
+      - alert: Neutrin0FinalityStalled
+        expr: neutrin0_finality_progress_age_seconds >= neutrin0_finality_stall_timeout_seconds
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Finality exceeds the configured stall timeout'}
+      - alert: Neutrin0ProverStarved
+        expr: sum by(instance,job,node) (neutrin0_proving_waiters) > 0 and on(instance,job,node) sum by(instance,job,node) (increase(neutrin0_proving_wait_total{outcome="admitted"}[15m])) == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Queued proving work has received no capacity for 15 minutes'}
+      - record: neutrin0_local_proof_failures_15m
+        expr: |
+          label_replace(increase(neutrin0_block_proof_total{outcome="failed"}[15m]), "stage", "block", "", "")
+          or label_replace(increase(neutrin0_chunk_proof_total{outcome="failed"}[15m]), "stage", "chunk", "", "")
+          or label_replace(increase(neutrin0_fact_proof_total{outcome="failed"}[15m]), "stage", "fact", "", "")
+          or label_replace(increase(neutrin0_evidence_proof_total{outcome="failed"}[15m]), "stage", "evidence", "", "")
+          or label_replace(increase(neutrin0_program_setup_total{outcome="failed"}[15m]), "stage", "program_setup", "", "")
+      - alert: Neutrin0ProofFailures
+        expr: sum by(instance,job,node) (neutrin0_local_proof_failures_15m) > 0
+        labels: {severity: warning}
+        annotations: {summary: 'A local proof generation attempt failed'}
+      - alert: Neutrin0DiskLow
+        expr: neutrin0_data_filesystem_available_bytes / neutrin0_data_filesystem_size_bytes < 0.1
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Less than 10% free space on the data filesystem'}
+      - alert: Neutrin0StoragePressure
+        expr: neutrin0_storage_pressure == 1
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: 'Node {{ $labels.node }} paused production: data filesystem below storage.min_free_bytes'
+          description: 'Free space or let finality resume pruning. Below storage.halt_free_bytes the node stops.'
+      - alert: Neutrin0DiskFillingUp
+        expr: predict_linear(neutrin0_data_filesystem_available_bytes[6h], 86400) < 0 and on(instance,job) neutrin0_data_filesystem_available_bytes / neutrin0_data_filesystem_size_bytes < 0.4
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Data filesystem of {{ $labels.node }} fills within a day at the current rate'
+          description: 'Unfinalized data grows while chunk proofs stall; check finality before the storage quota pauses production.'
+      - alert: Neutrin0FilesystemMetricsUnavailable
+        expr: neutrin0_data_filesystem_sample_available == 0 and on(instance,job) neutrin0_data_directory_configured == 1
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Configured data filesystem capacity cannot be sampled'}
+      - alert: Neutrin0StorageErrors
+        expr: sum by(instance,job,node) (increase(neutrin0_storage_errors_total[5m])) > 0
+        labels: {severity: critical}
+        annotations: {summary: 'Persistent storage operation failed'}
+      - alert: Neutrin0PruningFailing
+        expr: sum by(instance,job,node) (increase(neutrin0_history_prune_failures_total[1h])) >= 3
+        labels: {severity: warning}
+        annotations: {summary: 'History and state pruning keeps failing; disk grows until it is fixed'}
+      - alert: Neutrin0RepeatedRestart
+        expr: changes(process_start_time_seconds{job="neutrin0"}[30m]) >= 3
+        labels: {severity: warning}
+        annotations: {summary: 'Node restarted at least three times in 30 minutes'}
+      - alert: Neutrin0RpcTimeouts
+        expr: sum by(instance,job,node) (increase(neutrin0_rpc_requests_total{outcome="timeout"}[5m])) > 0
+        labels: {severity: warning}
+        annotations: {summary: 'Runtime or Ethereum JSON-RPC calls timed out'}
+      - alert: Neutrin0LightHistoryConflict
+        expr: neutrin0_light_history_conflict == 1
+        labels: {severity: critical}
+        annotations:
+          summary: 'Light client {{ $labels.node }} halted on two verified History proofs that disagree'
+          description: 'Two valid proofs at one chunk count mean a safety failure or a fork. Investigate before configuring a new trusted checkpoint.'
+      - alert: Neutrin0TrustAnchorExpired
+        expr: neutrin0_trust_anchor_expired == 1
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: 'Trust anchor of {{ $labels.node }} is outside the weak-subjectivity period; configure a fresh trusted checkpoint'}
+      - alert: Neutrin0ExecutionBackpressure
+        expr: neutrin0_execution_backpressure == 1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Production on {{ $labels.node }} waits for a chunk certificate'
+          description: 'The execution window is full: the next chunk boundary is neither finalized nor certified. Check chunk proving and BFT progress.'
+      - alert: Neutrin0Doppelganger
+        expr: neutrin0_doppelganger_detected == 1
+        labels: {severity: critical}
+        annotations:
+          summary: 'Another process signs with the validator key of {{ $labels.node }}; signing and production paused'
+          description: 'Stop every other instance of this key before resuming with `neutrin0-cli validator resume-signing` and `resume-production`; two signers of one key forfeit the whole slashable balance.'
+      - alert: Neutrin0UpgradeNotReady
+        expr: neutrin0_upgrade_missing_programs > 0 and on(instance,job) neutrin0_upgrade_scheduled == 1
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Node {{ $labels.node }} has not installed the scheduled program switch'
+          description: 'Inspect `neutrin0-cli programs status`. A node missing a program at activation cannot execute or verify under it.'
+      - alert: Neutrin0ReporterEligibilityUnavailable
+        expr: neutrin0_reporter_eligibility_available{role="reporter"} == 0
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'Reporter has not completed a finalized eligibility query'}
+      - alert: Neutrin0ReporterQueryFailures
+        expr: increase(neutrin0_reporter_eligibility_query_failures_total{role="reporter"}[15m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: 'Reporter eligibility query failed; retained data must remain protected'}
+      - alert: Neutrin0EconomicsUnavailable
+        expr: neutrin0_accountability_metrics_available{role=~"validator|full|archive|reporter"} == 0
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'Current finalized runtime settlement totals are unavailable'}
+      - alert: Neutrin0EconomicsQueryFailures
+        expr: increase(neutrin0_reporter_economic_query_failures_total{role=~"validator|full|archive|reporter"}[15m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: 'Finalized runtime economic query failed'}
+      - alert: Neutrin0EconomicsCounterOverflow
+        expr: neutrin0_accountability_counter_overflow == 1
+        labels: {severity: warning}
+        annotations: {summary: 'A runtime cumulative accounting counter exceeded u128 precision'}
+      - alert: Neutrin0EvidencePoolPressure
+        expr: (sum by(instance,job,node) (neutrin0_evidence_pool_records) > 230 or sum by(instance,job,node) (neutrin0_evidence_pool_bytes) > 30198988) and on(instance,job) neutrin0_reporter_inventory_available == 1
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Proven evidence pool exceeds 90% of its shared active/dormant capacity'}
+      - alert: Neutrin0RawEvidencePoolPressure
+        expr: neutrin0_reporter_retained_records{kind="raw_reports"} > 921 and on(instance,job) neutrin0_reporter_inventory_available == 1
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Raw misconduct pool exceeds 90% capacity'}
+      - alert: Neutrin0ReporterInventoryUnavailable
+        expr: neutrin0_reporter_inventory_available{role="reporter"} == 0
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: 'Reporter retention inventory has no current successful sample'}
+      - alert: Neutrin0BootnodeFailures
+        expr: sum by(instance,job,node) (increase(neutrin0_bootnode_dial_failures_total[15m])) > 10 and on(instance,job,node) neutrin0_peers == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Repeated bootnode failures with no connected peers'}
+      - alert: Neutrin0P2pRpcFailures
+        expr: sum by(instance,job,node) (increase(neutrin0_network_rpc_transport_failures_total[5m])) > 10
+        labels: {severity: warning}
+        annotations: {summary: 'Repeated P2P RPC transport failures'}

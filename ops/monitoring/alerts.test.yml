@@ -1,0 +1,214 @@
+rule_files: [alerts.yml,expected-targets.yml]
+evaluation_interval: 15s
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'neutrin0_block_proof_total{outcome="failed",job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0+1x15'
+      - series: 'neutrin0_chunk_proof_total{outcome="failed",job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0+2x15'
+      - series: 'neutrin0_fact_proof_total{outcome="failed",job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0+0x15'
+      - series: 'neutrin0_evidence_proof_total{outcome="failed",job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0+0x15'
+      - series: 'neutrin0_program_setup_total{outcome="failed",job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0+0x15'
+    promql_expr_test:
+      - expr: 'neutrin0_local_proof_failures_15m'
+        eval_time: 15m
+        exp_samples:
+          - labels: 'neutrin0_local_proof_failures_15m{job="neutrin0",instance="node:9615",node="validator-1",outcome="failed",stage="block"}'
+            value: 15
+          - labels: 'neutrin0_local_proof_failures_15m{job="neutrin0",instance="node:9615",node="validator-1",outcome="failed",stage="chunk"}'
+            value: 30
+          - labels: 'neutrin0_local_proof_failures_15m{job="neutrin0",instance="node:9615",node="validator-1",outcome="failed",stage="fact"}'
+            value: 0
+          - labels: 'neutrin0_local_proof_failures_15m{job="neutrin0",instance="node:9615",node="validator-1",outcome="failed",stage="evidence"}'
+            value: 0
+          - labels: 'neutrin0_local_proof_failures_15m{job="neutrin0",instance="node:9615",node="validator-1",outcome="failed",stage="program_setup"}'
+            value: 0
+      - expr: 'sum by(instance,job,node) (neutrin0_local_proof_failures_15m)'
+        eval_time: 15m
+        exp_samples:
+          - labels: '{job="neutrin0",instance="node:9615",node="validator-1"}'
+            value: 45
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: Neutrin0ProofFailures
+        exp_alerts:
+          - exp_labels: {severity: warning,job: neutrin0,instance: 'node:9615',node: validator-1}
+            exp_annotations: {summary: 'A local proof generation attempt failed'}
+  - interval: 15s
+    input_series:
+      - series: 'up{job="neutrin0",node="validator-1"}'
+        values: '1+0x8'
+      - series: 'up{job="neutrin0",node="validator-2"}'
+        values: '1+0x8'
+      - series: 'up{job="neutrin0",node="validator-3"}'
+        values: '1+0x8'
+      - series: 'up{job="neutrin0",node="validator-4"}'
+        values: '1+0x8'
+    alert_rule_test:
+      - eval_time: 90s
+        alertname: Neutrin0ExpectedTargetMissing
+        exp_alerts:
+          - exp_labels: {severity: critical,job: neutrin0,node: reporter-1,role: reporter}
+            exp_annotations: {summary: 'Expected node reporter-1 disappeared from service discovery'}
+  - interval: 15s
+    input_series:
+      - series: 'neutrin0_data_filesystem_sample_available{job="neutrin0",instance="node:9615"}'
+        values: '0+0x24'
+      - series: 'neutrin0_data_directory_configured{job="neutrin0",instance="node:9615"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: Neutrin0FilesystemMetricsUnavailable
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: Neutrin0FilesystemMetricsUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning,job: neutrin0,instance: 'node:9615'}
+            exp_annotations: {summary: 'Configured data filesystem capacity cannot be sampled'}
+  - interval: 15s
+    input_series:
+      - series: 'up{job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0+0x8'
+    alert_rule_test:
+      - eval_time: 90s
+        alertname: Neutrin0NodeDown
+        exp_alerts:
+          - exp_labels: {severity: critical,job: neutrin0,instance: 'node:9615',node: validator-1}
+            exp_annotations:
+              summary: 'Node validator-1 cannot be scraped'
+              description: 'Inspect process exit code and named critical-worker logs. The metrics listener stops with the node.'
+  - interval: 15s
+    input_series:
+      - series: 'neutrin0_finality_progress_age_seconds{job="neutrin0",instance="node:9615"}'
+        values: '60+0x8'
+      - series: 'neutrin0_finality_stall_timeout_seconds{job="neutrin0",instance="node:9615"}'
+        values: '60+0x8'
+    alert_rule_test:
+      - eval_time: 90s
+        alertname: Neutrin0FinalityStalled
+        exp_alerts:
+          - exp_labels: {severity: critical,job: neutrin0,instance: 'node:9615'}
+            exp_annotations: {summary: 'Finality exceeds the configured stall timeout'}
+  - interval: 15s
+    input_series:
+      - series: 'up{job="neutrin0",instance="node:9615"}'
+        values: '1+0x50'
+      - series: 'neutrin0_ready{job="neutrin0",instance="node:9615"}'
+        values: '0+0x50'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: Neutrin0NodeNotReady
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: Neutrin0NodeNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning,job: neutrin0,instance: 'node:9615'}
+            exp_annotations:
+              summary: 'Node  is not ready'
+              description: 'Inspect neutrin0_readiness_reason and sync progress. Startup/bootstrap may legitimately take longer on CPU.'
+  - interval: 15s
+    input_series:
+      - series: 'neutrin0_reporter_inventory_available{job="neutrin0",instance="stale:9615",node="stale",role="reporter"}'
+        values: '0+0x48'
+      - series: 'neutrin0_reporter_inventory_available{job="neutrin0",instance="current:9615",node="current",role="reporter"}'
+        values: '1+0x48'
+      - series: 'neutrin0_reporter_inventory_available{job="neutrin0",instance="disabled:9615",node="disabled",role="full"}'
+        values: '0+0x48'
+      - series: 'neutrin0_evidence_pool_records{job="neutrin0",instance="stale:9615",node="stale",role="reporter",state="active"}'
+        values: '256+0x48'
+      - series: 'neutrin0_evidence_pool_records{job="neutrin0",instance="current:9615",node="current",role="reporter",state="active"}'
+        values: '256+0x48'
+      - series: 'neutrin0_evidence_pool_records{job="neutrin0",instance="disabled:9615",node="disabled",role="full",state="active"}'
+        values: '256+0x48'
+      - series: 'neutrin0_evidence_pool_bytes{job="neutrin0",instance="stale:9615",node="stale",role="reporter",state="active"}'
+        values: '33554432+0x48'
+      - series: 'neutrin0_evidence_pool_bytes{job="neutrin0",instance="current:9615",node="current",role="reporter",state="active"}'
+        values: '33554432+0x48'
+      - series: 'neutrin0_evidence_pool_bytes{job="neutrin0",instance="disabled:9615",node="disabled",role="full",state="active"}'
+        values: '33554432+0x48'
+      - series: 'neutrin0_reporter_retained_records{job="neutrin0",instance="stale:9615",node="stale",role="reporter",kind="raw_reports"}'
+        values: '1024+0x48'
+      - series: 'neutrin0_reporter_retained_records{job="neutrin0",instance="current:9615",node="current",role="reporter",kind="raw_reports"}'
+        values: '1024+0x48'
+      - series: 'neutrin0_reporter_retained_records{job="neutrin0",instance="disabled:9615",node="disabled",role="full",kind="raw_reports"}'
+        values: '1024+0x48'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: Neutrin0EvidencePoolPressure
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: Neutrin0EvidencePoolPressure
+        exp_alerts:
+          - exp_labels: {severity: warning,job: neutrin0,instance: 'current:9615',node: current}
+            exp_annotations: {summary: 'Proven evidence pool exceeds 90% of its shared active/dormant capacity'}
+      - eval_time: 4m
+        alertname: Neutrin0RawEvidencePoolPressure
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: Neutrin0RawEvidencePoolPressure
+        exp_alerts:
+          - exp_labels: {severity: warning,job: neutrin0,instance: 'current:9615',node: current,role: reporter,kind: raw_reports}
+            exp_annotations: {summary: 'Raw misconduct pool exceeds 90% capacity'}
+      - eval_time: 9m
+        alertname: Neutrin0ReporterInventoryUnavailable
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: Neutrin0ReporterInventoryUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning,job: neutrin0,instance: 'stale:9615',node: stale,role: reporter}
+            exp_annotations: {summary: 'Reporter retention inventory has no current successful sample'}
+  - interval: 1m
+    input_series:
+      - series: 'neutrin0_storage_pressure{job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0 0 1 1 1'
+      - series: 'neutrin0_doppelganger_detected{job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0 0 1 1 1'
+      - series: 'neutrin0_upgrade_scheduled{job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '1+0x40'
+      - series: 'neutrin0_upgrade_missing_programs{job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '2+0x40'
+      - series: 'neutrin0_upgrade_scheduled{job="neutrin0",instance="node:9616",node="validator-2"}'
+        values: '1+0x40'
+      - series: 'neutrin0_upgrade_missing_programs{job="neutrin0",instance="node:9616",node="validator-2"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: Neutrin0StoragePressure
+        exp_alerts:
+          - exp_labels: {severity: critical,job: neutrin0,instance: 'node:9615',node: validator-1}
+            exp_annotations:
+              summary: 'Node validator-1 paused production: data filesystem below storage.min_free_bytes'
+              description: 'Free space or let finality resume pruning. Below storage.halt_free_bytes the node stops.'
+      - eval_time: 1m
+        alertname: Neutrin0Doppelganger
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: Neutrin0Doppelganger
+        exp_alerts:
+          - exp_labels: {severity: critical,job: neutrin0,instance: 'node:9615',node: validator-1}
+            exp_annotations:
+              summary: 'Another process signs with the validator key of validator-1; signing and production paused'
+              description: 'Stop every other instance of this key before resuming with `neutrin0-cli validator resume-signing` and `resume-production`; two signers of one key forfeit the whole slashable balance.'
+      - eval_time: 35m
+        alertname: Neutrin0UpgradeNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning,job: neutrin0,instance: 'node:9615',node: validator-1}
+            exp_annotations:
+              summary: 'Node validator-1 has not installed the scheduled program switch'
+              description: 'Inspect `neutrin0-cli programs status`. A node missing a program at activation cannot execute or verify under it.'
+  - interval: 10m
+    input_series:
+      - series: 'neutrin0_history_prune_failures_total{job="neutrin0",instance="node:9615",node="validator-1"}'
+        values: '0+1x8'
+      - series: 'neutrin0_history_prune_failures_total{job="neutrin0",instance="node:9616",node="validator-2"}'
+        values: '0 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: Neutrin0PruningFailing
+        exp_alerts:
+          - exp_labels: {severity: warning,job: neutrin0,instance: 'node:9615',node: validator-1}
+            exp_annotations: {summary: 'History and state pruning keeps failing; disk grows until it is fixed'}

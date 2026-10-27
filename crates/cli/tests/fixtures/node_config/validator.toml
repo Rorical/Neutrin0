@@ -1,0 +1,33 @@
+chain_id = 9
+role = "validator"
+chain_spec_path = "chain-spec.toml"
+data_dir = "node data"
+listen = ["/ip4/0.0.0.0/tcp/30303", "/ip4/127.0.0.1/tcp/30304"]
+bootnodes = ["/ip4/127.0.0.1/tcp/30305", "/ip4/127.0.0.1/tcp/30306"]
+proposer_ikm_path = "keys/validator.ikm"
+proposer_index = 2
+
+[proving]
+backend = "cpu"
+concurrency = 2
+capacity = 16
+
+[storage]
+min_free_bytes = 10737418240
+halt_free_bytes = 2147483648
+
+[rpc]
+listen = "127.0.0.1:9933"
+max_connections = 200
+max_concurrent_requests = 64
+requests_per_second_per_client = 50
+max_batch_requests = 16
+runtime_call_timeout_ms = 2000
+
+[metrics]
+listen = "127.0.0.1:9615"
+
+[execution]
+mode = "proof_follow"
+query_fuel = 2000000000
+validate_tx_fuel = 100000000

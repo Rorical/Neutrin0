@@ -1,0 +1,17 @@
+chain_id = 9
+role = "archive"
+chain_spec_path = "chain-spec.toml"
+
+[proving]
+backend = "cpu"
+concurrency = 2
+capacity = 16
+
+[storage]
+min_free_bytes = 10737418240
+halt_free_bytes = 2147483648
+
+[execution]
+mode = "execute"
+query_fuel = 2000000000
+validate_tx_fuel = 100000000

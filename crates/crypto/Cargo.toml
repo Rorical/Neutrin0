@@ -1,0 +1,32 @@
+[package]
+name          = "neutrin0-crypto"
+description   = "BLAKE3, SHA-256 and Keccak-256 hashing, secp256k1 recoverable signatures and min-pk BLS12-381 with proof of possession."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+# Crypto is std-only: blst and k256 can build for no_std + alloc, but no
+# consumer of this crate needs it.
+
+[dependencies]
+neutrin0-primitives = { workspace = true }
+sha2                = { workspace = true }
+tiny-keccak         = { workspace = true }
+k256                = { workspace = true }
+blst                = { workspace = true }
+zeroize             = { workspace = true }
+rand_core           = { workspace = true }
+hex                 = { workspace = true }
+
+[dev-dependencies]
+# System entropy is test-only; runtime key generation accepts an injected CSPRNG.
+getrandom           = { workspace = true }
+
+[lints]
+workspace = true

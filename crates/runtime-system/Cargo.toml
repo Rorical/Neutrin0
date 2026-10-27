@@ -1,0 +1,33 @@
+[package]
+name          = "neutrin0-runtime-system"
+description   = "System modules embedded by the Neutrin0 runtime: staking, governance and accountability over an engine-authenticated caller."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+readme        = { workspace = true }
+publish       = { workspace = true }
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+blake3                = { workspace = true }
+borsh                 = { workspace = true }
+neutrin0-runtime-core = { workspace = true }
+neutrin0-runtime-abi  = { workspace = true }
+neutrin0-primitives   = { workspace = true }
+neutrin0-consensus-types = { workspace = true }
+# Registration proofs use the exact check consensus rotation applies before seating.
+neutrin0-prover-chunk = { path = "../prover-chunk", version = "0.1.0", default-features = false }
+
+[dev-dependencies]
+neutrin0-crypto       = { workspace = true }
+neutrin0-runtime-core = { workspace = true, features = ["host"] }
+
+[lints]
+workspace = true

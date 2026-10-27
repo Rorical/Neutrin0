@@ -1,0 +1,23 @@
+[package]
+name          = "neutrin0-mempool"
+description   = "Bounded transaction pool ordered by the runtime's verdicts."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["neutrin0-primitives/std"]
+
+[dependencies]
+neutrin0-runtime-abi = { workspace = true }
+neutrin0-primitives = { workspace = true }
+
+[lints]
+workspace = true

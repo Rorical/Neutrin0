@@ -1,0 +1,28 @@
+[package]
+name          = "neutrin0-sync"
+description   = "Sync driver that turns network events into state-machine input and delegates verification to a host backend."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1.92"
+borsh.workspace = true
+neutrin0-consensus-types.workspace = true
+neutrin0-network.workspace = true
+neutrin0-primitives.workspace = true
+thiserror.workspace = true
+tokio = { version = "1.53.1", features = ["macros", "rt", "sync", "time"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["full", "test-util"] }

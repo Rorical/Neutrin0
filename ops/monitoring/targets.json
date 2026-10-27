@@ -1,0 +1,7 @@
+[
+  {"targets":["127.0.0.1:9615"],"labels":{"node":"validator-1","role":"validator"}},
+  {"targets":["127.0.0.1:9616"],"labels":{"node":"validator-2","role":"validator"}},
+  {"targets":["127.0.0.1:9617"],"labels":{"node":"validator-3","role":"validator"}},
+  {"targets":["127.0.0.1:9618"],"labels":{"node":"validator-4","role":"validator"}},
+  {"targets":["127.0.0.1:9619"],"labels":{"node":"reporter-1","role":"reporter"}}
+]

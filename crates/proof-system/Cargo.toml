@@ -1,0 +1,33 @@
+[package]
+name          = "neutrin0-proof-system"
+description   = "ProofSystem and BlockExecutor traits, History proof verification and a block-only mock."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "neutrin0-primitives/std",
+    "neutrin0-consensus-types/std",
+    "neutrin0-runtime-abi/std",
+    "neutrin0-trie/std",
+    "borsh/std",
+]
+
+[dependencies]
+neutrin0-consensus-types = { workspace = true }
+neutrin0-primitives      = { workspace = true }
+neutrin0-runtime-abi     = { workspace = true }
+neutrin0-trie            = { workspace = true }
+neutrin0-prover-chunk    = { workspace = true }
+borsh                    = { workspace = true }
+
+[lints]
+workspace = true

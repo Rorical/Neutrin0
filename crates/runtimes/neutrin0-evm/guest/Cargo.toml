@@ -1,0 +1,61 @@
+# Standalone crate built by runtime-host/build.rs under the `succinct`
+# toolchain. The empty [workspace] opts it out of the parent workspace.
+[workspace]
+
+[package]
+name        = "neutrin0-evm-runtime-guest"
+version     = "0.1.0"
+edition     = "2024"
+rust-version = "1.96"
+publish     = false
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/Rorical/Neutrin0"
+description = "SP1 Guest binary for the Neutrin0 EVM runtime."
+
+[[bin]]
+name = "neutrin0-evm-runtime-guest"
+path = "src/main.rs"
+
+[dependencies]
+neutrin0-consensus-types = { path = "../../../consensus-types", default-features = false }
+sp1-zkvm                       = { version = "=6.10.0", features = ["verify"] }
+sha2                           = { version = "0.11.0", default-features = false }
+borsh                          = { version = "1.8.1", default-features = false, features = ["derive"] }
+neutrin0-evm-runtime-core      = { path = "../core", default-features = false, features = ["sp1-crypto"] }
+neutrin0-runtime-core          = { path = "../../../runtime-core", default-features = false }
+neutrin0-runtime-abi           = { path = "../../../runtime-abi", default-features = false }
+
+# Guest-local patches route the upstream cryptographic APIs to SP1's constrained
+# precompile circuits. Native/WASM builds retain the portable upstream libraries.
+# Match alloy-primitives' sha3 0.11 backend; patching only tiny-keccak misses EVM KECCAK256.
+# SHA-256 also covers the EVM precompile and recursive evidence public-value digest.
+# Immutable commits correspond to the officially supported SP1 patch tags below.
+[patch.crates-io]
+# patch-sha3-0.11.0-sp1-6.0.0
+sha3 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", rev = "540d99e46fbe7aab00caf83c4144cb4eaaf62a17" }
+# patch-sha2-0.11.0-sp1-6.2.0
+sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", rev = "8993e08b9f7c47cd4a056decbf85d2d7ab3fe77c" }
+# SP1's own public-value hasher and older transitive consumers still use 0.10.
+# patch-sha2-0.10.9-sp1-6.2.0
+sha2-v0-10 = { package = "sha2", git = "https://github.com/sp1-patches/RustCrypto-hashes", rev = "e48b656ebc806117554bb33c2f8687e4637e37ff" }
+# patch-k256-13.4-sp1-6.0.0
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", rev = "476243d31d3ffd9d882d0e5da1f6adaa2a204b62" }
+# patch-p256-13.2-sp1-6.0.0
+p256 = { git = "https://github.com/sp1-patches/elliptic-curves", rev = "923794180d3d7716ba3eed94459d4b434f844090" }
+# patch-0.6.0-sp1-6.0.0-substrate-bn; selected only by the Guest crypto adapter.
+substrate-bn = { git = "https://github.com/sp1-patches/bn", rev = "13747d255e00c158afbb6d4a4a94275edd804bbf" }
+# patch-0.8.0-sp1-6.0.0; the adapter retains Ethereum byte/subgroup validation.
+bls12_381 = { git = "https://github.com/sp1-patches/bls12_381", rev = "c6a3a331f8bee02913cc2c4eae2805360f888aaa" }
+# patch-0.5.5-sp1-6.0.0; safe BIGINT syscall wrapper for 256-bit modexp factors.
+crypto-bigint-v0-5 = { package = "crypto-bigint", git = "https://github.com/sp1-patches/RustCrypto-bigint", rev = "ef85da866879b5929b1da071ebe92c082b0554b9" }
+
+[profile.release]
+opt-level     = 3
+# SP1's bundled standard library requires its default non-LTO link mode.
+lto           = false
+codegen-units = 1
+debug         = false
+panic         = "abort"
+# Overflow traps here as in the WASM master and native builds, so a receipt
+# can never commit a wrapped result an honest header did not compute.
+overflow-checks = true

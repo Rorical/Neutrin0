@@ -1,0 +1,23 @@
+[package]
+name          = "neutrin0-consensus-types"
+description   = "Neutrin0 consensus wire types: blocks, chunks, boundaries, BFT messages, evidence and history records."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["neutrin0-primitives/std", "borsh/std"]
+
+[dependencies]
+neutrin0-primitives = { workspace = true }
+borsh               = { workspace = true }
+
+[lints]
+workspace = true

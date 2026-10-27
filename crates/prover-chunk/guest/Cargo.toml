@@ -1,0 +1,57 @@
+# Standalone crate built by runtime-host/build.rs under the `succinct`
+# toolchain. The empty [workspace] opts it out of the parent workspace
+# (same pattern as the EVM block guest).
+[workspace]
+
+[package]
+name        = "neutrin0-chunk-guest"
+version     = "0.1.0"
+edition     = "2024"
+rust-version = "1.96"
+publish     = false
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/Rorical/Neutrin0"
+autobins    = false
+description = "SP1 Chunk, Evidence and Fact Guest programs."
+
+[[bin]]
+name = "neutrin0-consensus-chunk-guest"
+path = "src/consensus.rs"
+
+[[bin]]
+name = "neutrin0-evidence-guest"
+path = "src/evidence.rs"
+
+[[bin]]
+name = "neutrin0-fact-guest"
+path = "src/facts.rs"
+
+[dependencies]
+# `verify` enables `sp1_zkvm::lib::verify::verify_sp1_proof` (the
+# recursion-syscall wrapper).  Without this feature the guest cannot
+# verify inner SP1 proofs, which the chunk and evidence Guests do.
+sp1-zkvm                       = { version = "=6.10.0", features = ["verify"] }
+borsh                          = { version = "1.8.1", default-features = false, features = ["derive"] }
+sha2                           = { version = "0.11.0", default-features = false }
+neutrin0-prover-chunk          = { path = "..", default-features = false, features = ["sp1-verification"] }
+
+[profile.release]
+opt-level     = 3
+# SP1's bundled standard library requires its default non-LTO link mode.
+lto           = false
+codegen-units = 1
+debug         = false
+panic         = "abort"
+# Overflow traps here as in the WASM master and native builds, so a receipt
+# can never commit a wrapped result an honest header did not compute.
+overflow-checks = true
+
+# SP1 BLS field/pairing acceleration. Keep the native verifier on the
+# crates.io implementation as an independent parity reference.
+[patch.crates-io]
+bls12_381 = { git = "https://github.com/sp1-patches/bls12_381", rev = "9e4e2ae4780d3d69cecbec000f5e814df2392468" }
+# Guest-local official SP1 SHA-256 circuits; native/WASM retain upstream SHA2.
+# patch-sha2-0.11.0-sp1-6.2.0 (application digests and recursive public values).
+sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", rev = "8993e08b9f7c47cd4a056decbf85d2d7ab3fe77c" }
+# patch-sha2-0.10.9-sp1-6.2.0 (SP1 internals and BLS hash-to-curve digest 0.10).
+sha2-v0-10 = { package = "sha2", git = "https://github.com/sp1-patches/RustCrypto-hashes", rev = "e48b656ebc806117554bb33c2f8687e4637e37ff" }

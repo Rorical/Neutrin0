@@ -1,0 +1,22 @@
+# Public full/archive node RPC; the indexer never connects to the private management interface.
+rpc_url = "http://127.0.0.1:9933"
+# Replace with the complete chain-specification hash from your trusted deployment.
+chain_spec_hash = "0x0000000000000000000000000000000000000000000000000000000000000000"
+# Set this environment variable to your existing PostgreSQL connection string.
+database_url_env = "NEUTRIN0_INDEXER_DATABASE_URL"
+# Dedicated schema within that database. One ingestion writer per schema.
+database_schema = "neutrin0_indexer"
+listen = "127.0.0.1:8080"
+
+# evm: historically decoded Ethereum transactions, receipts, logs and token movements.
+# opaque: exact common envelopes and artifacts, with no invented runtime fields.
+runtime = "evm"
+
+batch_blocks = 128
+max_reorg_blocks = 8192
+proof_refresh_blocks = 32
+orphan_retention_blocks = 256
+poll_seconds = 1
+timeout_seconds = 10
+# Exact frontend origins, without trailing slash. Empty disables cross-origin browser access.
+cors_origins = []

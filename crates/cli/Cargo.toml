@@ -1,0 +1,47 @@
+[package]
+name          = "neutrin0-cli"
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+description   = "Operator tooling: network setup, typed RPC queries and signed transactions."
+
+[[bin]]
+name = "neutrin0-cli"
+path = "src/main.rs"
+
+[dependencies]
+borsh = { workspace = true }
+getrandom                   = { workspace = true }
+hex                         = { workspace = true }
+neutrin0-consensus-engine   = { workspace = true }
+neutrin0-crypto             = { workspace = true }
+neutrin0-keystore           = { workspace = true }
+neutrin0-node               = { workspace = true }
+neutrin0-runtime-host       = { workspace = true }
+neutrin0-rpc                = { workspace = true }
+neutrin0-primitives         = { workspace = true }
+neutrin0-runtime-abi        = { workspace = true }
+neutrin0-runtime-system     = { workspace = true }
+neutrin0-consensus-types    = { workspace = true }
+jsonrpsee                   = { workspace = true }
+serde                       = { workspace = true }
+serde_json                  = { workspace = true }
+tokio                       = { workspace = true }
+zeroize                     = { workspace = true }
+alloy-consensus             = { workspace = true }
+alloy-eips                  = { workspace = true }
+alloy-primitives            = { version = "=1.7.3", default-features = false }
+k256                        = { workspace = true }
+rand_core                   = { workspace = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+toml = "1.1.6"

@@ -1,0 +1,53 @@
+[package]
+name          = "neutrin0-trie"
+description   = "Binary sparse Merkle trie with prefix compression, Poseidon2 and BLAKE3 hashers and inclusion/exclusion proofs."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["neutrin0-primitives/std", "borsh/std"]
+# Read-through persistent node sources for host state stores; never in a Guest.
+store = ["std"]
+
+[dependencies]
+neutrin0-primitives = { workspace = true }
+borsh               = { workspace = true }
+
+# Host-side Poseidon2 permutation matching SP1's `POSEIDON2`
+# precompile.  Gated to "host-ish" targets — meaning anything that
+# is NOT the SP1 Guest (which uses the precompile via sp1-lib) and
+# NOT the master cdylib's `wasm32-unknown-unknown` build (which
+# delegates state-root computation to host imports and therefore
+# never executes the trie's hash function at runtime).  Pulling
+# `slop-koala-bear` into the wasm32 cdylib otherwise drags in the
+# `getrandom` dep, which refuses to compile for
+# `wasm32-unknown-unknown` without a target-specific backend
+# feature.
+[target.'cfg(not(any(target_os = "zkvm", target_arch = "wasm32")))'.dependencies]
+once_cell           = { workspace = true }
+slop-algebra        = { workspace = true }
+slop-koala-bear     = { workspace = true }
+slop-symmetric      = { workspace = true }
+
+[target.'cfg(target_os = "zkvm")'.dependencies]
+# Only the SP1 Guest target gets the syscall wrapper; on every
+# other (non-wasm) target we fall back to the software permutation
+# built from slop-* above.
+sp1-lib             = { workspace = true }
+
+[dev-dependencies]
+# Trie tests use rand_chacha for
+# deterministic randomised insertion / proof checks.
+rand_chacha         = { workspace = true }
+rand_core           = { workspace = true }
+
+[lints]
+workspace = true

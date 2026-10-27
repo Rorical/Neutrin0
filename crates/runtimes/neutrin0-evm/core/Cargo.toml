@@ -1,0 +1,48 @@
+[package]
+name          = "neutrin0-evm-runtime-core"
+description   = "Osaka EVM runtime shared by native, WASM and SP1 execution."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+readme        = { workspace = true }
+publish       = { workspace = true }
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+# The standalone Guest enables this. Native/WASM retain their portable backends.
+sp1-crypto = ["dep:bls12_381", "dep:crypto-bigint", "dep:substrate-bn"]
+
+[dependencies]
+revm = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+neutrin0-runtime-system = { workspace = true }
+borsh                 = { workspace = true }
+
+neutrin0-runtime-core = { workspace = true }
+neutrin0-runtime-abi  = { workspace = true }
+neutrin0-primitives   = { workspace = true }
+neutrin0-consensus-types = { workspace = true }
+
+[target.'cfg(all(target_os = "zkvm", target_vendor = "succinct"))'.dependencies]
+bls12_381 = { version = "=0.8.0", default-features = false, features = ["alloc", "pairings", "experimental"], optional = true }
+crypto-bigint = { version = "=0.5.5", default-features = false, optional = true }
+substrate-bn = { version = "=0.6.0", default-features = false, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+hex = { workspace = true }
+alloy-primitives = { version = "=1.7.3", default-features = false }
+k256 = { workspace = true }
+neutrin0-runtime-core = { workspace = true, features = ["host"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,24 @@
+[package]
+name          = "neutrin0-consensus-fork-choice"
+description   = "Fork choice over the candidate block DAG above finality."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["neutrin0-consensus-types/std", "neutrin0-primitives/std"]
+
+[dependencies]
+neutrin0-consensus-types = { workspace = true }
+neutrin0-primitives      = { workspace = true }
+sha2                     = { workspace = true }
+
+[lints]
+workspace = true

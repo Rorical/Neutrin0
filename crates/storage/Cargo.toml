@@ -1,0 +1,23 @@
+[package]
+name          = "neutrin0-storage"
+description   = "Column-family database trait with atomic batches, an in-memory backend and RocksDB."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = []
+rocksdb = ["std", "dep:rocksdb"]
+
+[dependencies]
+rocksdb = { workspace = true, optional = true }
+
+[lints]
+workspace = true

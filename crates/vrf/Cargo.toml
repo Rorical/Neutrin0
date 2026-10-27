@@ -1,0 +1,34 @@
+[package]
+name          = "neutrin0-vrf"
+description   = "BLS-VRF evaluation and verification, stake-weighted eligibility and the finalized-seed fold."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+# Portable message, eligibility and seed logic is available without std.
+# Native BLS signing/verification is provided by the std feature.
+
+[features]
+default = ["std"]
+std = ["dep:neutrin0-crypto"]
+
+[dependencies]
+neutrin0-primitives = { workspace = true }
+neutrin0-crypto     = { workspace = true, optional = true }
+sha2                = { workspace = true }
+
+[dev-dependencies]
+# Tests use rand_chacha so they can feed
+# `neutrin0-crypto::SecretKey::generate`, plus rand 0.10 stays out of
+# the VRF test path.
+rand_chacha         = { workspace = true }
+rand_core           = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,24 @@
+[package]
+name          = "neutrin0-runtime-abi"
+description   = "Borsh wire types shared by the Neutrin0 runtime and its hosts, and the WASM entry-point names."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[features]
+default = ["std"]
+std = ["neutrin0-primitives/std", "neutrin0-consensus-types/std", "borsh/std"]
+
+[dependencies]
+neutrin0-consensus-types = { workspace = true }
+neutrin0-primitives = { workspace = true }
+borsh               = { workspace = true }
+
+[lints]
+workspace = true

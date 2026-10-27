@@ -1,0 +1,10 @@
+target/
+**/target/
+.git/
+.github/
+.env
+.env.*
+.plans/
+.claude/
+.codegraph/
+**/.DS_Store

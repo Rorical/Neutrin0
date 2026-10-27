@@ -1,0 +1,23 @@
+chain_id = 9
+role = "reporter"
+chain_spec_path = "chain-spec.toml"
+
+[reporter]
+reward_address_hex = "000000000000000000000000abababababababababababababababababababab"
+
+[proving]
+backend = "cuda"
+concurrency = 2
+capacity = 16
+
+[storage]
+min_free_bytes = 10737418240
+halt_free_bytes = 2147483648
+
+[metrics]
+listen = "127.0.0.1:9615"
+
+[execution]
+mode = "proof_follow"
+query_fuel = 2000000000
+validate_tx_fuel = 100000000

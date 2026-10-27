@@ -1,0 +1,19 @@
+chain_id = 9
+role = "validator"
+chain_spec_path = "chain-spec.toml"
+# proposer_ikm_path = "validator.ikm"   # or export NEUTRIN0_PROPOSER_IKM_HEX
+proposer_index = 0
+
+[proving]
+backend = "cpu"
+concurrency = 2
+capacity = 16
+
+[storage]
+min_free_bytes = 10737418240
+halt_free_bytes = 2147483648
+
+[execution]
+mode = "proof_follow"
+query_fuel = 2000000000
+validate_tx_fuel = 100000000

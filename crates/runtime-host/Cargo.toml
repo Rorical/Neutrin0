@@ -1,0 +1,59 @@
+[package]
+name          = "neutrin0-runtime-host"
+description   = "SP1 prover/verifier host plus WASM dynamic runtime host for the Neutrin0 runtime."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+readme        = { workspace = true }
+publish       = { workspace = true }
+
+[lib]
+
+[features]
+cuda = ["sp1-sdk/cuda", "dep:tokio"]
+
+# SP1 is a hard environment dependency of Neutrin0: every contributor and
+# every CI runner installs the `succinct` rustup toolchain via `sp1up`
+# before `cargo build --locked`. The guest ELF and the master WASM are
+# both compiled by `build.rs`.
+
+[dependencies]
+sp1-sdk                       = { workspace = true }
+tokio                         = { workspace = true, optional = true }
+wasmtime                      = { workspace = true }
+borsh                         = { workspace = true }
+blake3                        = { workspace = true }
+thiserror                     = { workspace = true }
+neutrin0-runtime-core         = { workspace = true, features = ["host"] }
+neutrin0-runtime-abi          = { workspace = true }
+neutrin0-primitives           = { workspace = true }
+neutrin0-crypto               = { workspace = true }
+neutrin0-proof-system         = { workspace = true }
+neutrin0-light-client         = { workspace = true }
+neutrin0-consensus-types      = { workspace = true }
+neutrin0-trie                 = { workspace = true }
+neutrin0-prover-chunk         = { workspace = true, features = ["sp1-verification"] }
+neutrin0-evm-runtime-core     = { workspace = true }
+
+[build-dependencies]
+sp1-build = { workspace = true }
+
+[dev-dependencies]
+revm = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+neutrin0-runtime-system = { workspace = true }
+neutrin0-evm-runtime-master = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-primitives = { version = "=1.7.3", default-features = false }
+k256 = { workspace = true }
+neutrin0-vrf                    = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,33 @@
+[package]
+name          = "neutrin0-runtime-core"
+description   = "Framework code for Neutrin0 runtimes: StateBackend trait, WitnessState (guest), LiveTrie and TracingState (host)."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+readme        = { workspace = true }
+publish       = { workspace = true }
+
+[lib]
+
+[features]
+default = []
+# Enables `TracingState` and `LiveTrie` for host execution and witness capture.
+# The core trait and `WitnessState`
+# remain `no_std + alloc` so the SP1 Guest and `wasm32-unknown-unknown`
+# can link them.
+host    = []
+
+[dependencies]
+borsh = { workspace = true }
+neutrin0-consensus-types = { workspace = true }
+neutrin0-primitives  = { workspace = true }
+neutrin0-runtime-abi = { workspace = true }
+neutrin0-trie        = { workspace = true }
+
+[lints]
+workspace = true

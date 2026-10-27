@@ -1,0 +1,33 @@
+[package]
+name          = "neutrin0-evm-runtime-master"
+description   = "EVM runtime master binary. Compiles to wasm32-unknown-unknown and is loaded by the WASM dynamic runtime host."
+version       = { workspace = true }
+edition       = { workspace = true }
+rust-version  = { workspace = true }
+authors       = { workspace = true }
+license       = { workspace = true }
+repository    = { workspace = true }
+homepage      = { workspace = true }
+documentation = { workspace = true }
+readme        = { workspace = true }
+publish       = { workspace = true }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+neutrin0-evm-runtime-core     = { workspace = true }
+borsh                         = { workspace = true }
+neutrin0-runtime-core         = { workspace = true }
+neutrin0-runtime-abi          = { workspace = true }
+neutrin0-primitives           = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dlmalloc = { workspace = true, features = ["global"] }
+
+[dev-dependencies]
+neutrin0-consensus-types = { workspace = true }
+neutrin0-runtime-core    = { workspace = true, features = ["host"] }
+
+[lints]
+workspace = true
