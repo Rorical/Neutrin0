@@ -15,7 +15,7 @@ jobs:
     name: licenses, bans and sources (cargo-deny)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses bans sources
@@ -24,7 +24,7 @@ jobs:
     name: security advisories (cargo-deny)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check advisories
@@ -41,7 +41,7 @@ jobs:
     name: monitoring rules (promtool)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check rules, alert tests and dashboard queries
         run: PROMTOOL="$(ops/monitoring/install-promtool.sh "$RUNNER_TEMP")" ops/monitoring/check.sh
 
@@ -49,7 +49,7 @@ jobs:
     name: rust
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         run: rustup show
