@@ -1,8 +1,9 @@
 //! Event-driven complete proving with exact BFT quorum fencing.
 
+mod certification;
 mod chunk_proof;
 
-use super::{BftQuorumIdentity, ChainBackend, SyncBackendError, rejected};
+use super::{BftQuorumIdentity, ChainBackend};
 use neutrin0_consensus_engine::ProposerKey;
 use neutrin0_proof_system::ProofSystem;
 use neutrin0_storage::Database;
@@ -46,11 +47,14 @@ where
         })
     }
 
-    pub(super) fn handle_quorum_reached(&self, identity: BftQuorumIdentity) {
+    pub(super) async fn handle_quorum_reached(&self, identity: BftQuorumIdentity) {
         if self.bootstrap_pending() || self.is_light() || self.block_program().is_none() {
             return;
         }
-        if let Err(error) = self.certify_quorum_execution(identity) {
+        let Ok(slot) = Arc::clone(&self.certification_slot).acquire_owned().await else {
+            return;
+        };
+        if let Err(error) = self.certify_quorum_execution(identity, slot).await {
             warn!(?identity, %error, "execution certification failed");
             return;
         }
@@ -84,44 +88,6 @@ where
             return;
         }
         self.start_consensus_proof(identity);
-    }
-
-    /// Install the quorum's certificate and certify the execution it covers,
-    /// unless another node's certificate already did.
-    fn certify_quorum_execution(
-        &self,
-        identity: BftQuorumIdentity,
-    ) -> Result<(), SyncBackendError> {
-        let executor = self.replay_executor_snapshot();
-        self.with_live_engine_mut(|engine| {
-            if engine.execution_quorum_identity(identity.chunk_id) != Some(identity) {
-                return Err(SyncBackendError::NotAvailable(
-                    "BFT quorum changed before certification".into(),
-                ));
-            }
-            if engine.certified_execution_witness().is_none() {
-                let certificate = engine
-                    .bft_session(identity.chunk_id)
-                    .and_then(neutrin0_consensus_engine::BftSession::certificate)
-                    .ok_or_else(|| {
-                        SyncBackendError::NotAvailable("complete certificate unavailable".into())
-                    })?;
-                let mut prepared = engine
-                    .prepare_bft_consensus_chunk(identity.chunk_id, self.proof_system.as_ref())
-                    .map_err(rejected)?;
-                engine
-                    .install_finality_certificate(&mut prepared, certificate)
-                    .map_err(rejected)?;
-                engine
-                    .certify_execution_chunk(
-                        &prepared,
-                        self.proof_system.as_ref(),
-                        executor.as_deref(),
-                    )
-                    .map_err(rejected)?;
-            }
-            Ok(())
-        })
     }
 
     /// Whether this node proves the certified chunk now, with the certification

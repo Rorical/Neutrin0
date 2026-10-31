@@ -195,8 +195,14 @@ no protocol path abandons a certificate.
 
 ## Finalization
 
-The node validates the candidate before BFT, obtains the certificate, proves
-outside the engine lock and verifies the receipt before atomically persisting
+The node captures branch inputs under the engine lock and verifies the selected
+receipts and candidate on a blocking worker before BFT. Native certification
+also validates outside the lock, then rechecks the live authority before its
+durable execution commit. One reserved Chunk job covers preparation and proving;
+repeated BFT notifications cannot start concurrent preparations. Preparation
+reconstructs receipts outside the lock and requires the exact already-certified
+witness before reusing its complete consensus verdict. The node proves outside
+the engine lock and verifies the receipt before atomically persisting
 finality and the next context. Gossip and RPC imports go through the same
 checks. There is no proofless or execution-only finalization path. Before the
 proof finishes, verified block receipts and full native validation can

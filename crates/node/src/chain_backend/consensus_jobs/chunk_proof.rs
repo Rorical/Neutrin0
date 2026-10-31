@@ -23,13 +23,11 @@ use crate::proving_budget::ProvingBudget;
 struct ConsensusProofJob<DB: Database, P: ProofSystem> {
     identity: BftQuorumIdentity,
     prover: Arc<P>,
-    programs: GuestPrograms,
     budget: Arc<ProvingBudget>,
     engine: Arc<Mutex<Engine<DB>>>,
+    bootstrap: Arc<Mutex<Option<super::super::bootstrap::BootstrapRuntime>>>,
     metrics: Arc<NodeMetrics>,
     pending: BacklogGuard,
-    prepared: PreparedConsensusChunk<P>,
-    chunk_prover: Hash,
 }
 
 impl<DB, P> ConsensusProofJob<DB, P>
@@ -43,32 +41,39 @@ where
         let Self {
             identity,
             prover,
-            programs,
             budget,
             engine,
+            bootstrap,
             metrics,
             pending,
-            prepared,
-            chunk_prover,
         } = self;
+        let (prepared, chunk_prover) =
+            prepare_consensus_proof(&engine, &bootstrap, prover.as_ref(), identity).map_err(
+                |error| {
+                    warn!(?identity, %error, "complete chunk preparation failed");
+                    ProofError::InvalidWitness
+                },
+            )?;
+        let programs = GuestPrograms {
+            execution: prepared.witness.context.programs.execution,
+            chunk: prepared.witness.chain_spec.genesis_chunk,
+        };
         let _program_lease = budget.setup(|| prover.lease_programs(&programs))?;
         drop(pending);
         let permit = budget
             .request(ProofStage::Chunk)
             .wait_if(|| {
-                engine
-                    .lock()
-                    .expect("engine mutex poisoned")
-                    .execution_quorum_identity(identity.chunk_id)
-                    == Some(identity)
+                let engine = engine.lock().expect("engine mutex poisoned");
+                !super::super::bootstrap::pending(&bootstrap)
+                    && engine.execution_quorum_identity(identity.chunk_id) == Some(identity)
             })
             .ok_or(ProofError::InvalidWitness)?;
-        if engine
-            .lock()
-            .expect("engine mutex poisoned")
-            .execution_quorum_identity(identity.chunk_id)
-            != Some(identity)
-        {
+        let live = {
+            let engine = engine.lock().expect("engine mutex poisoned");
+            !super::super::bootstrap::pending(&bootstrap)
+                && engine.execution_quorum_identity(identity.chunk_id) == Some(identity)
+        };
+        if !live {
             return Err(ProofError::InvalidWitness);
         }
         let proof = permit.run(|| {
@@ -129,39 +134,6 @@ where
         .flatten()
     }
 
-    /// The certified witness, its block and ratified chunk proofs, and the
-    /// account the chunk proof credits, while `identity` is still current.
-    fn prepare_consensus_proof(
-        &self,
-        identity: BftQuorumIdentity,
-    ) -> Result<(PreparedConsensusChunk<P>, Hash), SyncBackendError> {
-        self.with_live_engine_mut(|engine| {
-            if engine.execution_quorum_identity(identity.chunk_id) != Some(identity) {
-                return Err(SyncBackendError::NotAvailable(
-                    "BFT quorum changed before preparation".into(),
-                ));
-            }
-            let prepared = engine
-                .prepare_certified_execution(self.proof_system.as_ref())
-                .map_err(rejected)?;
-            // Design 08: the Guest verifies the ratified chunk proof, so only a
-            // node holding it can prove; the proof is fetched by statement key.
-            if let Some((chunk_id, statement_key)) = prepared.missing_ratified_proof() {
-                return Err(SyncBackendError::NotAvailable(format!(
-                    "ratified chunk proof {statement_key:?} of chunk {chunk_id} is not held"
-                )));
-            }
-            if engine.execution_quorum_identity(identity.chunk_id) != Some(identity) {
-                return Err(SyncBackendError::NotAvailable(
-                    "BFT quorum changed before launch".into(),
-                ));
-            }
-            // Design 08: the chunk proof credits this node's prover account.
-            let chunk_prover = engine.prover_address().map_err(not_available)?;
-            Ok((prepared, chunk_prover))
-        })
-    }
-
     pub(super) fn start_consensus_proof(&self, identity: BftQuorumIdentity) {
         let mut running = self
             .consensus_proof_task
@@ -174,31 +146,19 @@ where
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return;
         }
-        let (prepared, chunk_prover) = match self.prepare_consensus_proof(identity) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                warn!(?identity, %error, "complete chunk preparation failed");
-                return;
-            }
-        };
         let notify = Arc::clone(&self.consensus_proof_notify);
         let job = ConsensusProofJob {
             identity,
             prover: Arc::clone(&self.proof_system),
-            programs: GuestPrograms {
-                execution: prepared.witness.context.programs.execution,
-                chunk: prepared.witness.chain_spec.genesis_chunk,
-            },
             budget: Arc::clone(&self.proving_budget),
             engine: Arc::clone(&self.engine),
+            bootstrap: Arc::clone(&self.bootstrap),
             metrics: Arc::clone(&self.metrics),
             pending: self
                 .metrics
                 .proof_pipeline
                 .chunk_backlog
-                .track(prepared.witness.blocks.len()),
-            prepared,
-            chunk_prover,
+                .track(usize::try_from(self.chunk_size()).unwrap_or(usize::MAX)),
         };
         let (tx, rx) = oneshot::channel();
         self.spawn_supervised("consensus-proof", false, async move {
@@ -249,7 +209,7 @@ where
                 self.publish(Topic::ChunkProofs, &alternative).await;
             }
             if let Some(ready) = self.ready_consensus_quorum() {
-                self.handle_quorum_reached(ready);
+                self.handle_quorum_reached(ready).await;
             }
             return;
         }
@@ -291,7 +251,77 @@ where
         }
         // A stale completion must not strand a newer quorum behind the old worker.
         if let Some(ready) = self.ready_consensus_quorum() {
-            self.handle_quorum_reached(ready);
+            self.handle_quorum_reached(ready).await;
         }
     }
+}
+
+/// Gather the durable certified value briefly, then reconstruct and verify its
+/// receipts outside the engine lock. Equality binds reuse to the exact witness
+/// already authenticated at certification (or during restart recovery).
+fn prepare_consensus_proof<DB, P>(
+    engine: &Arc<Mutex<Engine<DB>>>,
+    bootstrap: &Mutex<Option<super::super::bootstrap::BootstrapRuntime>>,
+    prover: &P,
+    identity: BftQuorumIdentity,
+) -> Result<(PreparedConsensusChunk<P>, Hash), SyncBackendError>
+where
+    DB: Database,
+    DB::Error: core::fmt::Debug + core::fmt::Display,
+    P: ProofSystem,
+{
+    let (pending, certified, chunk_prover) = {
+        let engine = engine.lock().expect("engine mutex poisoned");
+        if super::super::bootstrap::pending(bootstrap)
+            || engine.execution_quorum_identity(identity.chunk_id) != Some(identity)
+        {
+            return Err(SyncBackendError::NotAvailable(
+                "BFT quorum changed before preparation".into(),
+            ));
+        }
+        let certified = engine
+            .certified_execution_witness()
+            .cloned()
+            .ok_or_else(|| {
+                SyncBackendError::NotAvailable("certified execution unavailable".into())
+            })?;
+        let pending = engine
+            .pending_consensus_chunk(
+                identity.chunk_id,
+                certified.finality_cert.proposal.chunk.end_block_hash,
+                Some(&certified.finality_cert.proposal.receipt_keys()),
+            )
+            .map_err(rejected)?;
+        (
+            pending,
+            certified,
+            engine.prover_address().map_err(not_available)?,
+        )
+    };
+    let mut prepared = pending.prepare::<P, DB::Error>(prover).map_err(rejected)?;
+    {
+        let engine = engine.lock().expect("engine mutex poisoned");
+        if super::super::bootstrap::pending(bootstrap)
+            || engine.execution_quorum_identity(identity.chunk_id) != Some(identity)
+            || engine.certified_execution_witness() != Some(&certified)
+        {
+            return Err(SyncBackendError::NotAvailable(
+                "BFT quorum changed before launch".into(),
+            ));
+        }
+        engine
+            .install_finality_certificate(&mut prepared, certified.finality_cert.clone())
+            .map_err(rejected)?;
+    }
+    if prepared.witness != certified {
+        return Err(SyncBackendError::Rejected(
+            "certified witness changed during preparation".into(),
+        ));
+    }
+    if let Some((chunk_id, statement_key)) = prepared.missing_ratified_proof() {
+        return Err(SyncBackendError::NotAvailable(format!(
+            "ratified chunk proof {statement_key:?} of chunk {chunk_id} is not held"
+        )));
+    }
+    Ok((prepared, chunk_prover))
 }

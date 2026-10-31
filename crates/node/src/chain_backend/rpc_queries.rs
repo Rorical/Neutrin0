@@ -1,9 +1,12 @@
 //! RPC views are selected by block hash and read from its committed state root.
 
+mod blocking;
 mod diagnostics;
 mod reads;
 mod runtime_calls;
 mod transactions;
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use neutrin0_consensus_types::{Block, Body, Header};
@@ -32,12 +35,27 @@ where
     /// body read and checked against the header outside it. Clients take
     /// what RPC returns as is, so local corruption is caught here rather
     /// than served.
-    pub(super) fn read_block(&self, hash: BlockHash) -> Result<Option<Block>, QueryError> {
-        let Some(header) = self.with_engine(|engine| readable_header(engine, hash))? else {
-            return Ok(None);
-        };
-        let bytes = self
-            .reads
+    async fn read_block_async(&self, hash: BlockHash) -> Result<Option<Block>, QueryError> {
+        let engine = Arc::clone(&self.engine);
+        let reads = Arc::clone(&self.reads);
+        self.rpc_blocking(move || {
+            let header = {
+                let engine = engine.lock().expect("ChainBackend mutex poisoned");
+                readable_header(&engine, hash)?
+            };
+            header
+                .map(|header| Self::read_block_body(reads.as_ref(), hash, header))
+                .transpose()
+        })
+        .await
+    }
+
+    fn read_block_body(
+        reads: &dyn neutrin0_storage::ReadHandle,
+        hash: BlockHash,
+        header: Header,
+    ) -> Result<Block, QueryError> {
+        let bytes = reads
             .get(neutrin0_storage::Column::Blocks, &hash)
             .map_err(storage_error)?
             .ok_or(QueryError::BodyUnavailable)?;
@@ -47,7 +65,7 @@ where
                 "stored body does not match the header commitment",
             ));
         }
-        Ok(Some(Block { header, body }))
+        Ok(Block { header, body })
     }
 }
 
@@ -65,39 +83,44 @@ where
         if self.is_light() {
             return Err(QueryError::StateUnavailable);
         }
-        let Some(read) = self.read_block(block)? else {
+        let Some(read) = self.read_block_async(block).await? else {
             return Ok(None);
         };
-        let runtime = self.with_engine(|engine| {
-            engine
-                .runtime_code_hash_for(read.header.height)
-                .map_err(storage_error)
-        })?;
-        Ok(Some(neutrin0_rpc::types::BlockArtifactsJson {
-            block_hash: neutrin0_rpc::HashHex(block),
-            runtime_code_hash: neutrin0_rpc::HashHex(runtime),
-            artifacts: neutrin0_rpc::BytesHex(
-                borsh::to_vec(&read.body.artifacts).map_err(storage_error)?,
-            ),
-        }))
+        let runtime = self
+            .rpc_engine(move |engine| {
+                engine
+                    .runtime_code_hash_for(read.header.height)
+                    .map_err(storage_error)
+            })
+            .await?;
+        self.rpc_blocking(move || {
+            Ok(Some(neutrin0_rpc::types::BlockArtifactsJson {
+                block_hash: neutrin0_rpc::HashHex(block),
+                runtime_code_hash: neutrin0_rpc::HashHex(runtime),
+                artifacts: neutrin0_rpc::BytesHex(
+                    borsh::to_vec(&read.body.artifacts).map_err(storage_error)?,
+                ),
+            }))
+        })
+        .await
     }
     async fn chunk(
         &self,
         id: Option<u64>,
     ) -> Result<Option<neutrin0_rpc::types::ChunkJson>, QueryError> {
-        self.query_chunk(id)
+        self.query_chunk(id).await
     }
     async fn certificate(
         &self,
         id: u64,
     ) -> Result<Option<neutrin0_rpc::types::CertificateJson>, QueryError> {
-        self.query_certificate(id)
+        self.query_certificate(id).await
     }
     async fn artifact(
         &self,
         id: neutrin0_rpc::types::ArtifactIdJson,
     ) -> Result<Option<neutrin0_rpc::types::ArtifactInfoJson>, QueryError> {
-        self.query_artifact(id)
+        self.query_artifact(id).await
     }
     async fn artifact_bytes(
         &self,
@@ -106,17 +129,18 @@ where
         offset: u64,
         length: u32,
     ) -> Result<neutrin0_rpc::types::ArtifactSliceJson, QueryError> {
-        self.query_artifact_bytes(&id, expected, offset, length)
+        self.query_artifact_bytes(id, expected, offset, length)
+            .await
     }
     async fn chain_events(
         &self,
         after: Option<neutrin0_rpc::types::ChainCursorJson>,
         limit: u32,
     ) -> Result<neutrin0_rpc::types::ChainEventPageJson, QueryError> {
-        self.query_chain_events(after, limit)
+        self.query_chain_events(after, limit).await
     }
     async fn diagnostics(&self) -> Result<neutrin0_rpc::types::DiagnosticsJson, QueryError> {
-        self.diagnostics_snapshot()
+        self.diagnostics_snapshot().await
     }
 
     async fn history_retention(&self) -> Result<HistoryRetention, QueryError> {
@@ -126,37 +150,42 @@ where
                 ..HistoryRetention::default()
             });
         }
-        self.with_engine(retention_info)
+        self.rpc_engine(retention_info).await
     }
 
     async fn genesis_info(&self) -> Result<Option<neutrin0_rpc::backend::GenesisInfo>, QueryError> {
-        Ok(Some(self.with_engine(|engine| {
-            let spec = engine.chain_spec();
-            neutrin0_rpc::backend::GenesisInfo {
-                hash: spec.genesis_block_hash,
-                state_root: spec.genesis_state_root,
-                timestamp: spec.genesis_time,
-                gas_limit: spec.genesis_gas_limit,
-                seed: spec.genesis_seed,
-            }
-        })))
+        Ok(Some(
+            self.rpc_engine(|engine| {
+                let spec = engine.chain_spec();
+                neutrin0_rpc::backend::GenesisInfo {
+                    hash: spec.genesis_block_hash,
+                    state_root: spec.genesis_state_root,
+                    timestamp: spec.genesis_time,
+                    gas_limit: spec.genesis_gas_limit,
+                    seed: spec.genesis_seed,
+                }
+            })
+            .await,
+        ))
     }
 
     async fn history_latest(&self) -> Result<Vec<u8>, QueryError> {
         if self.is_light() {
-            return borsh::to_vec(
-                &self
-                    .light_latest_proof()
-                    .map_err(storage_error)?
-                    .ok_or(QueryError::HistoryUnavailable)?,
-            )
-            .map_err(storage_error);
+            let proof = self
+                .light_latest_proof()
+                .map_err(storage_error)?
+                .ok_or(QueryError::HistoryUnavailable)?;
+            return self
+                .rpc_blocking(move || borsh::to_vec(&proof).map_err(storage_error))
+                .await;
         }
         let proof = self
-            .with_engine(neutrin0_consensus_engine::Engine::latest_history_proof)
+            .rpc_engine(neutrin0_consensus_engine::Engine::latest_history_proof)
+            .await
             .map_err(storage_error)?
             .ok_or(QueryError::HistoryUnavailable)?;
-        borsh::to_vec(&proof).map_err(storage_error)
+        self.rpc_blocking(move || borsh::to_vec(&proof).map_err(storage_error))
+            .await
     }
 
     fn chain_id(&self) -> ChainId {
@@ -202,7 +231,7 @@ where
                 state_root: boundary.state_root,
             });
         }
-        self.with_engine(|engine| {
+        self.rpc_engine(|engine| {
             let hash = engine.head_hash();
             let slot = if hash == engine.chain_spec().genesis_block_hash {
                 0
@@ -224,6 +253,7 @@ where
                 state_root: engine.head_state_root(),
             })
         })
+        .await
     }
 
     async fn finalized(&self) -> Result<FinalizedInfo, QueryError> {
@@ -236,14 +266,15 @@ where
                 state_root: boundary.state_root,
             });
         }
-        self.with_engine(finalized_info)
+        self.rpc_engine(finalized_info).await
     }
 
     async fn active_validator_set(&self) -> Vec<Validator> {
         if self.is_light() {
             return Vec::new();
         }
-        self.with_engine(|engine| engine.active_validator_set().to_vec())
+        self.rpc_engine(|engine| engine.active_validator_set().to_vec())
+            .await
     }
 
     async fn resolve_block_id(&self, id: &BlockId) -> Result<Option<BlockHash>, QueryError> {
@@ -256,40 +287,44 @@ where
                 _ => None,
             });
         }
-        self.with_engine(|engine| resolve_id(engine, id))
+        let id = id.clone();
+        self.rpc_engine(move |engine| resolve_id(engine, &id)).await
     }
 
     async fn header_by_hash(&self, hash: BlockHash) -> Result<Option<Header>, QueryError> {
-        self.with_engine(|engine| checked_header(engine, hash))
+        self.rpc_engine(move |engine| checked_header(engine, hash))
+            .await
     }
 
     async fn header_by_height(&self, height: Height) -> Result<Option<Header>, QueryError> {
-        self.with_engine(|engine| {
+        self.rpc_engine(move |engine| {
             resolve_id(engine, &BlockId::Height(height))?
                 .map(|hash| checked_header(engine, hash))
                 .transpose()
                 .map(Option::flatten)
         })
+        .await
     }
 
     async fn block_by_hash(&self, hash: BlockHash) -> Result<Option<Block>, QueryError> {
-        self.read_block(hash)
+        self.read_block_async(hash).await
     }
 
     async fn block_by_height(&self, height: Height) -> Result<Option<Block>, QueryError> {
-        let Some(hash) = self.with_engine(|engine| resolve_id(engine, &BlockId::Height(height)))?
+        let Some(hash) = self
+            .rpc_engine(move |engine| resolve_id(engine, &BlockId::Height(height)))
+            .await?
         else {
             return Ok(None);
         };
-        self.read_block(hash)
+        self.read_block_async(hash).await
     }
 
     async fn storage_at(&self, key: &[u8], at: &BlockId) -> Result<Option<Vec<u8>>, QueryError> {
-        self.rpc_state_snapshot(at)
-            .await?
-            .0
-            .get(key)
-            .map_err(state_read_error)
+        let (state, _) = self.rpc_state_snapshot(at).await?;
+        let key = key.to_vec();
+        self.rpc_blocking(move || state.get(&key).map_err(state_read_error))
+            .await
     }
 
     async fn submit_transaction(&self, bytes: Vec<u8>) -> Result<Hash, SubmitError> {
@@ -300,30 +335,38 @@ where
         &self,
         identifier: Hash,
     ) -> Result<Option<(Hash, u32)>, QueryError> {
-        self.rpc_execution_transaction(identifier)
+        self.rpc_execution_transaction(identifier).await
     }
 
     // Pending reads answer from the last validated pool: revalidation runs
     // once per head off the head-update fence, never per request.
     async fn pending_transaction(&self, identifier: Hash) -> Option<Vec<u8>> {
-        self.mempool
-            .lock()
-            .expect("ChainBackend mempool poisoned")
-            .transaction(&identifier)
+        let mempool = Arc::clone(&self.mempool);
+        self.rpc_blocking(move || {
+            mempool
+                .lock()
+                .expect("ChainBackend mempool poisoned")
+                .transaction(&identifier)
+        })
+        .await
     }
 
     async fn pending_identifiers(&self) -> Vec<Hash> {
-        self.mempool
-            .lock()
-            .expect("ChainBackend mempool poisoned")
-            .iter()
-            .take(8192)
-            .map(|entry| {
-                entry
-                    .dependency
-                    .map_or(entry.hash, |dependency| dependency.identifier)
-            })
-            .collect()
+        let mempool = Arc::clone(&self.mempool);
+        self.rpc_blocking(move || {
+            mempool
+                .lock()
+                .expect("ChainBackend mempool poisoned")
+                .iter()
+                .take(8192)
+                .map(|entry| {
+                    entry
+                        .dependency
+                        .map_or(entry.hash, |dependency| dependency.identifier)
+                })
+                .collect()
+        })
+        .await
     }
 
     async fn pending_sequence(
@@ -332,7 +375,7 @@ where
         state_nonce: u64,
         at: Hash,
     ) -> Result<u64, QueryError> {
-        self.rpc_pending_sequence(account, state_nonce, at)
+        self.rpc_pending_sequence(account, state_nonce, at).await
     }
 
     async fn runtime_pending_call(

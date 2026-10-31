@@ -15,6 +15,8 @@ pub mod native_executor;
 mod proving_duties;
 #[path = "complete_chunk/reporter_mode.rs"]
 mod reporter_mode;
+#[path = "complete_chunk/rpc_isolation.rs"]
+mod rpc_isolation;
 #[path = "../../prover-chunk/tests/support/mod.rs"]
 pub mod support;
 
@@ -1476,6 +1478,11 @@ async fn imported_finality_selects_a_proven_archived_fork_and_survives_restart()
         )
         .unwrap();
     let backend = ChainBackend::new(follower, ready_prover());
+    // This test serves the replaced fork after finality; pruned nodes may
+    // collect that orphan as soon as asynchronous retention runs.
+    backend
+        .set_retention_policy(neutrin0_consensus_engine::RetentionPolicy::Archive)
+        .unwrap();
     let executor = tokio::task::spawn_blocking(WasmExecutor::embedded)
         .await
         .unwrap()

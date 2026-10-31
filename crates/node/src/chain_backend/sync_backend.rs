@@ -1,6 +1,8 @@
 //! The [`SyncBackend`] surface the sync driver and network service call;
 //! every method delegates to the responsibility modules.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use neutrin0_consensus_types::{
     BlockReceipt, CandidateBlock, ChunkProof, FinalityVote, HistoryProof, ProvenBlock,
@@ -77,27 +79,20 @@ where
                 "execution certification is disabled".into(),
             ));
         }
-        let executor = self.replay_executor_snapshot();
-        self.with_live_engine_mut(|engine| {
-            let mut prepared = engine
-                .prepare_consensus_chunk_on_branch(
-                    certificate.chunk_id,
-                    certificate.proposal.chunk.end_block_hash,
-                    Some(&certificate.proposal.receipt_keys()),
-                    self.proof_system.as_ref(),
-                )
-                .map_err(rejected)?;
-            engine
-                .install_finality_certificate(&mut prepared, certificate)
-                .map_err(rejected)?;
-            engine
-                .certify_execution_chunk(&prepared, self.proof_system.as_ref(), executor.as_deref())
-                .map_err(rejected)?;
-            Ok(())
-        })?;
+        self.certify_execution_certificate(
+            Some(certificate),
+            None,
+            Arc::clone(&self.certification_slot)
+                .acquire_owned()
+                .await
+                .map_err(|_| {
+                    SyncBackendError::NotAvailable("certification worker closed".into())
+                })?,
+        )
+        .await?;
         self.sync_programs();
         if let Some(identity) = self.ready_consensus_quorum() {
-            self.handle_quorum_reached(identity);
+            self.handle_quorum_reached(identity).await;
         }
         Ok(())
     }
@@ -107,7 +102,7 @@ where
         chunk_id: ChunkId,
         hash: Option<Hash>,
     ) -> Result<neutrin0_network::rpc::CandidateByChunkResponse, SyncBackendError> {
-        self.p2p_bft_candidate(chunk_id, hash)
+        self.p2p_bft_candidate(chunk_id, hash).await
     }
 
     async fn validate_bft_candidate_hint(

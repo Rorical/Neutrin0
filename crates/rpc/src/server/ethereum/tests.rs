@@ -90,7 +90,7 @@ fn range_projection_rejects_mixed_fork_ancestry() {
     assert!(check_range_block(&block, Some([9; 32])).is_err());
 }
 
-fn projection_fixture() -> (neutrin0_consensus_types::Block, EvmArtifacts) {
+pub(super) fn projection_fixture() -> (neutrin0_consensus_types::Block, EvmArtifacts) {
     let context = neutrin0_consensus_types::runtime::ConsensusExecutionContext {
         slot: 2,
         timestamp: 12,

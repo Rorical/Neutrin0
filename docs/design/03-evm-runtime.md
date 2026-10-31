@@ -215,6 +215,12 @@ state across all allowance trials in one runtime query.
 
 Block reads check the header under the engine lock and read and verify the
 body outside it, so RPC traffic never holds the engine while it hashes bodies.
+Synchronous database reads, state snapshots, pending preparation and WASM queries
+run on a bounded blocking pool. A request timeout cancels the wait; running work
+keeps its concurrency slot until it exits. Block rendering projects artifacts
+once per response. Subscription polling includes header rendering in its deadline
+and advances its cursor only after the whole poll renders successfully; a poll
+timeout retries from the same anchor.
 Simulations run under the node's query fuel, memory and slot limits and the RPC
 request and time limits ([runtime interface](02-runtime-interface.md#historical-queries)).
 

@@ -47,6 +47,7 @@ pub mod validator_set;
 pub use bft_loop::{BftAction, BftLoopError, BftQuorumIdentity, BftSession, BftSessionOverview};
 pub use block_state::BlockState;
 pub use body::{BodyRoots, apply_body_roots, compute_body_roots};
+pub use certified::ValidatedExecutionChunk;
 pub use clock::SlotClock;
 pub use doppelganger::Doppelganger;
 pub use engine::{Engine, StateSource};
@@ -58,6 +59,7 @@ pub use import::{
 };
 pub use merkle::{EMPTY_MERKLE_ROOT, hash_leaf, merkle_root, merkle_root_of_hashes};
 pub use produce::{ProductionConfig, ProductionError, ProductionOutcome};
+pub use projected::{PendingProjection, ValidatedProjection};
 pub use proposer::{ProposerKey, SignerError};
 pub use prove::{ProveError, ProveOutcome, statement_key};
 pub use sign_request::{RemoteSigner, SignRequest};

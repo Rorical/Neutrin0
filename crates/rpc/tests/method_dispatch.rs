@@ -81,6 +81,7 @@ struct MockBackend {
     query_error: Option<QueryError>,
     runtime_error: Option<RuntimeCallError>,
     runtime_delay: Option<Duration>,
+    status_delay: Option<Duration>,
 }
 
 impl Default for MockBackend {
@@ -92,6 +93,7 @@ impl Default for MockBackend {
             query_error: None,
             runtime_error: None,
             runtime_delay: None,
+            status_delay: None,
             runtime_call_response: RuntimeCallResponse {
                 code: 0,
                 payload: vec![1, 2, 3, 4],
@@ -115,6 +117,9 @@ impl RpcBackend for MockBackend {
         self.chain_id
     }
     fn runtime_code_hash(&self) -> Option<neutrin0_primitives::Hash> {
+        if let Some(delay) = self.status_delay {
+            std::thread::sleep(delay);
+        }
         if self.runtime_attached {
             Some([7; 32])
         } else {
@@ -537,4 +542,27 @@ async fn history_retention_reports_actual_availability_and_finality() {
             "finalized_chunks": 12,
         })
     );
+}
+
+#[tokio::test]
+async fn blocking_status_reads_leave_the_transport_executor_responsive() {
+    let backend = MockBackend {
+        status_delay: Some(Duration::from_millis(250)),
+        ..MockBackend::default()
+    };
+    let module = build_module(Arc::new(backend)).unwrap();
+    let status = call_named(&module, "system_info", json!([]));
+    tokio::pin!(status);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut status)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        call_named(&module, "system_chainId", json!([]))
+            .await
+            .unwrap(),
+        7
+    );
+    assert!(status.await.unwrap()["runtime_code_hash"].is_string());
 }

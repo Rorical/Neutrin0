@@ -126,7 +126,7 @@ async fn dispatch(
         "net_version" => Ok(json!(ctx.backend().chain_id().to_string())),
         "web3_clientVersion" => Ok(json!(concat!("Neutrin0/", env!("CARGO_PKG_VERSION")))),
         "eth_syncing" => {
-            if ctx.backend().is_syncing() {
+            if ctx.blocking(crate::backend::RpcBackend::is_syncing).await? {
                 let head = ctx
                     .backend()
                     .head()

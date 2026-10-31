@@ -190,7 +190,7 @@ pub struct ChainBackend<DB: Database, P: ProofSystem> {
     orphan_receipts: Mutex<follow::OrphanReceipts>,
     /// Rejected envelopes no retained vote names yet.
     pending_rejections: Mutex<availability::PendingRejections>,
-    bootstrap: Mutex<Option<bootstrap::BootstrapRuntime>>,
+    bootstrap: Arc<Mutex<Option<bootstrap::BootstrapRuntime>>>,
     reporter: Mutex<Option<reporter::ReporterRuntime>>,
     evidence_job_running: Arc<std::sync::atomic::AtomicBool>,
     evidence_job_cursor: std::sync::atomic::AtomicUsize,
@@ -198,6 +198,12 @@ pub struct ChainBackend<DB: Database, P: ProofSystem> {
     proving_budget: Arc<crate::proving_budget::ProvingBudget>,
     proving_policy: Mutex<crate::config::ProvingPolicy>,
     consensus_proof_task: Mutex<Option<ConsensusProofTask<P>>>,
+    /// Serializes native certification preparation, including cancelled callers.
+    certification_slot: Arc<tokio::sync::Semaphore>,
+    /// Local candidate, signing and projection work cannot queue behind peers.
+    consensus_preparation_slot: Arc<tokio::sync::Semaphore>,
+    /// Expensive candidate advertisements served to remote callers.
+    candidate_slot: Arc<tokio::sync::Semaphore>,
     /// Divergent candidates awaiting a proven claim (design 08).
     execution_claims: Arc<Mutex<Vec<execution_claims::PendingClaim>>>,
     consensus_proof_notify: Arc<tokio::sync::Notify>,
@@ -257,8 +263,9 @@ pub struct ChainBackend<DB: Database, P: ProofSystem> {
     doppelganger_reported: std::sync::atomic::AtomicBool,
     /// This node's libp2p identity, once the network service is built.
     local_peer_id: Mutex<Option<String>>,
-    /// WASM queries (calls, gas estimates, pending views) running at once:
-    /// half the available cores, so RPC load cannot starve import and BFT.
+    /// Blocking RPC reads and WASM queries (calls, gas estimates, pending views)
+    /// running at once: half the available cores, leaving capacity for import
+    /// and BFT. A running worker keeps its slot after a caller times out.
     query_slots: Arc<tokio::sync::Semaphore>,
     /// Distinct receipt bytes each block may still have verified.
     receipt_budget:
@@ -342,7 +349,7 @@ where
             rescue_proofs: std::sync::atomic::AtomicBool::new(false),
             orphan_receipts: Mutex::default(),
             pending_rejections: Mutex::default(),
-            bootstrap: Mutex::new(None),
+            bootstrap: Arc::new(Mutex::new(None)),
             reporter: Mutex::new(None),
             evidence_job_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             evidence_job_cursor: std::sync::atomic::AtomicUsize::new(0),
@@ -355,6 +362,9 @@ where
             )),
             proving_policy: Mutex::new(crate::config::ProvingPolicy::default()),
             consensus_proof_task: Mutex::new(None),
+            certification_slot: Arc::new(tokio::sync::Semaphore::new(1)),
+            consensus_preparation_slot: Arc::new(tokio::sync::Semaphore::new(1)),
+            candidate_slot: Arc::new(tokio::sync::Semaphore::new(1)),
             execution_claims: Arc::new(Mutex::new(Vec::new())),
             consensus_proof_notify: Arc::new(tokio::sync::Notify::new()),
             last_candidate_notice: Mutex::new(None),

@@ -17,6 +17,15 @@ use neutrin0_storage::Database;
 use crate::{Engine, FinalizeError, StoreError, full_chunk::ConsensusState};
 
 mod certification;
+mod validation;
+use validation::validate_certificate;
+
+/// A fully checked native certificate, bound to its owned witness.
+/// Fields are private so callers cannot fabricate a successful verdict.
+pub struct ValidatedExecutionChunk {
+    certified: CertifiedExecution,
+    validated: neutrin0_prover_chunk::consensus::ValidatedConsensus,
+}
 
 /// One durable execution dependency; it never occupies a finalized column.
 #[expect(

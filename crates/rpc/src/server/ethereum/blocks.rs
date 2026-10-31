@@ -65,11 +65,11 @@ pub(super) async fn block_operation(
         }
         return Ok(Value::Null);
     };
-    let projected = artifacts(ctx, &block).await?;
     if method.starts_with("eth_getBlockTransactionCount") {
-        return Ok(q(projected.receipts.len() as u128));
+        return Ok(q(artifacts(ctx, &block).await?.receipts.len() as u128));
     }
     if method.starts_with("eth_getTransactionByBlock") {
+        let projected = artifacts(ctx, &block).await?;
         let index = usize::try_from(quantity(argument(args, 1)?)?).map_err(invalid_params)?;
         let Some(receipt) = projected.receipts.get(index) else {
             return Ok(Value::Null);

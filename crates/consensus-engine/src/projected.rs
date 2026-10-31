@@ -28,6 +28,46 @@ pub(crate) struct ProjectedExecution {
     pub(crate) state: ConsensusState,
 }
 
+/// Owned candidate inputs for successor projection outside the engine lock.
+pub struct PendingProjection {
+    pending: crate::full_chunk::PendingConsensusChunk,
+    start: neutrin0_consensus_types::history_proof::ConsensusBoundary,
+}
+
+/// A projection bound to the exact trusted incoming boundary and session value.
+#[derive(Debug)]
+pub struct ValidatedProjection {
+    start: neutrin0_consensus_types::history_proof::ConsensusBoundary,
+    projected: ProjectedExecution,
+}
+
+impl PendingProjection {
+    /// Verify receipts and derive the successor without holding the engine.
+    ///
+    /// # Errors
+    /// Returns invalid receipts, candidate consensus or successor derivation.
+    pub fn validate<P: ProofSystem, E>(
+        self,
+        prover: &P,
+    ) -> Result<ValidatedProjection, FinalizeError<E>> {
+        let (witness, _) = self.pending.witness(prover)?;
+        let projected = neutrin0_prover_chunk::consensus::project_successor(&witness)
+            .map_err(|_| ProofError::InvalidWitness)?;
+        Ok(ValidatedProjection {
+            start: self.start,
+            projected: ProjectedExecution {
+                chunk_hash: projected.chunk_hash,
+                state: ConsensusState {
+                    boundary: projected.end,
+                    next_seed: projected.end.seed,
+                    next_context: projected.next_context,
+                    frontier: projected.frontier,
+                },
+            },
+        })
+    }
+}
+
 impl<DB: Database> Engine<DB> {
     /// Project the successor of the open BFT session's candidate once all its
     /// receipts are held (design 08). Returns whether a new projection was
@@ -39,9 +79,23 @@ impl<DB: Database> Engine<DB> {
         &mut self,
         proof_system: &P,
     ) -> Result<bool, FinalizeError<DB::Error>> {
+        let Some(pending) = self.pending_successor_execution()? else {
+            return Ok(false);
+        };
+        let validated = pending.validate::<P, DB::Error>(proof_system)?;
+        self.record_successor_execution(validated)
+    }
+
+    /// Capture the current unprojected session without receipt verification.
+    ///
+    /// # Errors
+    /// Returns unavailable branch sources or a missing incoming boundary.
+    pub fn pending_successor_execution(
+        &mut self,
+    ) -> Result<Option<PendingProjection>, FinalizeError<DB::Error>> {
         if self.certified_execution.is_some() {
             self.projected_execution = None;
-            return Ok(false);
+            return Ok(None);
         }
         let chunk_id = self.finalized_next_chunk_id();
         let Some(chunk_hash) = self
@@ -49,30 +103,46 @@ impl<DB: Database> Engine<DB> {
             .map(crate::BftSession::chunk_hash)
         else {
             self.projected_execution = None;
-            return Ok(false);
+            return Ok(None);
         };
         if self
             .projected_execution
             .as_ref()
             .is_some_and(|projected| projected.chunk_hash == chunk_hash)
         {
+            return Ok(None);
+        }
+        let (context, seed, _) = self.consensus_boundary(chunk_id)?;
+        let start = neutrin0_prover_chunk::consensus::context_boundary(&context, seed)
+            .map_err(|_| ProofError::InvalidWitness)?;
+        let pending = self.pending_bft_consensus_chunk(chunk_id)?;
+        Ok(Some(PendingProjection { pending, start }))
+    }
+
+    /// Publish a validated projection only while its boundary and session value
+    /// remain current. A durable execution certificate always takes precedence.
+    ///
+    /// # Errors
+    /// Rejects a stale boundary or candidate.
+    pub fn record_successor_execution(
+        &mut self,
+        validated: ValidatedProjection,
+    ) -> Result<bool, FinalizeError<DB::Error>> {
+        if self.certified_execution.is_some() {
             return Ok(false);
         }
-        let prepared = self.prepare_bft_consensus_chunk(chunk_id, proof_system)?;
-        let projected = neutrin0_prover_chunk::consensus::project_successor(&prepared.witness)
-            .map_err(|_| ProofError::InvalidWitness)?;
-        if projected.chunk_hash != chunk_hash {
+        let (context, seed, _) = self.consensus_boundary(validated.start.next_chunk_id)?;
+        if neutrin0_prover_chunk::consensus::context_boundary(&context, seed)
+            .map_err(|_| ProofError::InvalidWitness)?
+            != validated.start
+            || self
+                .bft_session(context.chunk_id)
+                .map(crate::BftSession::chunk_hash)
+                != Some(validated.projected.chunk_hash)
+        {
             return Err(ProofError::PublicInputMismatch.into());
         }
-        self.projected_execution = Some(ProjectedExecution {
-            chunk_hash,
-            state: ConsensusState {
-                boundary: projected.end,
-                next_seed: projected.end.seed,
-                next_context: projected.next_context,
-                frontier: projected.frontier,
-            },
-        });
+        self.projected_execution = Some(validated.projected);
         Ok(true)
     }
 

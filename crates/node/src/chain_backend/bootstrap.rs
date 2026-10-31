@@ -50,6 +50,15 @@ pub(super) struct BootstrapRuntime {
     fetching: bool,
 }
 
+/// Read under the engine lock when deciding whether new chain work may start.
+pub(super) fn pending(runtime: &std::sync::Mutex<Option<BootstrapRuntime>>) -> bool {
+    runtime
+        .lock()
+        .expect("bootstrap runtime")
+        .as_ref()
+        .is_some_and(|runtime| runtime.fetching || runtime.pending.is_some())
+}
+
 /// RAII authority for an authenticated in-flight snapshot, independent of the
 /// replaceable pending manifest. Dropping one attempt cannot release another.
 struct BootstrapProgramPins {
@@ -312,12 +321,9 @@ where
     P: ProofSystem + Send + Sync + 'static,
 {
     pub(super) fn bootstrap_pending(&self) -> bool {
-        self.bootstrap
-            .lock()
-            .expect("bootstrap runtime")
-            .as_ref()
-            .is_some_and(|runtime| runtime.fetching || runtime.pending.is_some())
+        pending(&self.bootstrap)
     }
+
     pub(super) fn bootstrap_fetch(&self, active: bool) {
         // Serialize admission with every chain mutation. A caller that passed an
         // earlier optimistic check must recheck after acquiring this same lock.

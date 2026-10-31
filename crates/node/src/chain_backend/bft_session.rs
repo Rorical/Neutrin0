@@ -95,13 +95,7 @@ where
             return;
         }
         let assembled = if self.block_program().is_some() {
-            self.with_engine(|e| {
-                let prepared =
-                    e.prepare_bft_consensus_chunk(chunk_id, self.proof_system.as_ref())?;
-                Ok(Some(neutrin0_prover_chunk::consensus::as_chunk(
-                    &prepared.candidate.execution.chunk,
-                )))
-            })
+            self.prepare_bft_candidate(chunk_id).await.map(Some)
         } else {
             self.with_engine(|e| e.assemble_chunk(chunk_id))
         };
@@ -148,7 +142,7 @@ where
             }
         };
         self.metrics.execution.opened(chunk_id, tail_slot);
-        self.project_successor();
+        self.project_successor().await;
         self.handle_bft_actions(actions).await;
         self.retry_deferred_bft_votes().await;
     }
@@ -165,7 +159,7 @@ where
             e.chunk_heights(chunk_id).map(|(_, end)| end)
         }) else {
             // The session exists: keep its successor projected (design 08).
-            self.project_successor();
+            self.project_successor().await;
             return;
         };
         self.maybe_open_bft_session_for_height(height).await;
@@ -173,13 +167,38 @@ where
 
     /// Project the successor of the open session's proven candidate so the
     /// next chunk can be produced before the certificate (design 08).
-    fn project_successor(&self) {
+    async fn project_successor(&self) {
         if self.block_program().is_none() {
             return;
         }
+        let engine = Arc::clone(&self.engine);
+        let prover = Arc::clone(&self.proof_system);
+        let slot = Arc::clone(&self.consensus_preparation_slot)
+            .acquire_owned()
+            .await
+            .expect("certification slot remains open");
+        let validated = tokio::task::spawn_blocking(move || {
+            let _slot = slot;
+            let pending = engine
+                .lock()
+                .expect("engine mutex poisoned")
+                .pending_successor_execution()?;
+            pending
+                .map(|pending| pending.validate::<P, DB::Error>(prover.as_ref()))
+                .transpose()
+        })
+        .await;
+        let validated = match validated {
+            Ok(Ok(Some(validated))) => validated,
+            Ok(Ok(None)) => return,
+            error => {
+                debug!(?error, "successor projection unavailable");
+                return;
+            }
+        };
         match self.with_live_engine_mut(|engine| {
             engine
-                .project_successor_execution(self.proof_system.as_ref())
+                .record_successor_execution(validated)
                 .map_err(rejected)
         }) {
             Ok(true) => debug!("projected the successor boundary from the proven candidate"),
@@ -208,24 +227,62 @@ where
     /// sign: only gathering its witness holds the lock. The signing path
     /// rechecks the recorded verdict under the lock and validates there only
     /// if the value changed in between.
-    pub(super) fn prevalidate_bft_signing_candidate(&self, chunk_id: ChunkId) {
+    pub(super) async fn prevalidate_bft_signing_candidate(&self, chunk_id: ChunkId) {
         if self.local_voter().is_none() || self.block_program().is_none() {
             return;
         }
-        let pending = match self
-            .with_engine(|engine| engine.pending_bft_signing(chunk_id, self.proof_system.as_ref()))
-        {
-            Ok(Some(pending)) => pending,
-            Ok(None) => return,
-            Err(error) => {
-                debug!(chunk_id, ?error, "BFT value inputs unavailable");
-                return;
-            }
+        let engine = Arc::clone(&self.engine);
+        let prover = Arc::clone(&self.proof_system);
+        let Ok(slot) = Arc::clone(&self.consensus_preparation_slot)
+            .acquire_owned()
+            .await
+        else {
+            return;
         };
-        match pending.validate() {
-            Ok(validated) => self.with_engine_mut(|engine| engine.record_bft_signing(validated)),
-            Err(error) => debug!(chunk_id, ?error, "BFT value failed validation"),
+        let validated = tokio::task::spawn_blocking(move || {
+            let _slot = slot;
+            let pending = engine
+                .lock()
+                .expect("engine mutex poisoned")
+                .pending_bft_signing_inputs(chunk_id, prover.as_ref())?;
+            pending
+                .map(|pending| pending.validate::<P, DB::Error>(prover.as_ref()))
+                .transpose()
+        })
+        .await;
+        match validated {
+            Ok(Ok(Some(validated))) => {
+                self.with_engine_mut(|engine| engine.record_bft_signing(validated));
+            }
+            Ok(Ok(None)) => {}
+            error => debug!(chunk_id, ?error, "BFT value failed validation"),
         }
+    }
+
+    async fn prepare_bft_candidate(
+        &self,
+        chunk_id: ChunkId,
+    ) -> Result<neutrin0_consensus_types::Chunk, neutrin0_consensus_engine::FinalizeError<DB::Error>>
+    {
+        let engine = Arc::clone(&self.engine);
+        let prover = Arc::clone(&self.proof_system);
+        let slot = Arc::clone(&self.consensus_preparation_slot)
+            .acquire_owned()
+            .await
+            .expect("certification slot remains open");
+        tokio::task::spawn_blocking(move || {
+            let _slot = slot;
+            let pending = engine
+                .lock()
+                .expect("engine mutex poisoned")
+                .pending_bft_consensus_chunk(chunk_id)?;
+            let prepared = pending.prepare::<P, DB::Error>(prover.as_ref())?;
+            Ok(neutrin0_prover_chunk::consensus::as_chunk(
+                &prepared.candidate.execution.chunk,
+            ))
+        })
+        .await
+        .expect("candidate worker panicked")
     }
 
     /// Authenticate restored signing work and rebroadcast its original messages.
@@ -273,7 +330,7 @@ where
                         .await;
                 }
                 BftAction::QuorumReached(identity) => {
-                    self.handle_quorum_reached(identity);
+                    self.handle_quorum_reached(identity).await;
                 }
                 BftAction::BroadcastProposal(proposal) => {
                     self.publish_bft_message(&neutrin0_consensus_types::BftMessage::Proposal(
@@ -333,9 +390,10 @@ where
             return;
         }
         if let Some(identity) = self.ready_consensus_quorum() {
-            self.handle_quorum_reached(identity);
+            self.handle_quorum_reached(identity).await;
         }
-        self.prevalidate_bft_signing_candidate(self.with_engine(Engine::finalized_next_chunk_id));
+        self.prevalidate_bft_signing_candidate(self.with_engine(Engine::finalized_next_chunk_id))
+            .await;
         let actions = match self.with_live_engine_mut(|engine| {
             let chunk_id = engine.finalized_next_chunk_id();
             self.validate_bft_signing_candidate(engine, chunk_id)?;
