@@ -36,6 +36,7 @@ struct FilterInventory {
     /// Each filter with the slot it holds until it is removed or expires.
     filters: BTreeMap<u64, (Arc<tokio::sync::Mutex<PollFilter>>, ClientSlot)>,
 }
+#[derive(Clone)]
 pub(super) struct PollFilter {
     pub(super) last_used: Instant,
     pub(super) initialized: bool,
@@ -44,6 +45,7 @@ pub(super) struct PollFilter {
     pub(super) known: BTreeMap<u64, ([u8; 32], Vec<Value>)>,
     pub(super) pending: BTreeSet<[u8; 32]>,
 }
+#[derive(Clone)]
 pub(super) enum FilterKind {
     Logs { value: Value, selector: LogSelector },
     Blocks,

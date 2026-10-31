@@ -1,8 +1,57 @@
-use super::{FactJob, enqueue_fact_groups};
+use super::{FactJob, enqueue_fact_groups, run_fact_worker};
 use crate::metrics::NodeMetrics;
+use crate::proving_budget::ProvingBudget;
+use neutrin0_consensus_types::{BlockProofPublicInputs, history_proof::VkDigest};
+use neutrin0_primitives::Hash;
+use neutrin0_proof_system::{ProofError, ProofSystem};
 use neutrin0_prover_chunk::facts::{FactRequest, MAX_FACTS};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tokio::sync::mpsc;
+
+struct FactProbe {
+    calls: mpsc::UnboundedSender<(VkDigest, Vec<FactRequest>)>,
+}
+
+impl ProofSystem for FactProbe {
+    type BlockProof = Vec<u8>;
+    type ChunkProof = Vec<u8>;
+
+    fn prove_block(
+        &self,
+        _witness: &[u8],
+        _inputs: &BlockProofPublicInputs,
+        _prover: Hash,
+    ) -> Result<Self::BlockProof, ProofError> {
+        unreachable!("this fixture observes optional fact scheduling only")
+    }
+
+    fn verify_block(
+        &self,
+        _proof: &Self::BlockProof,
+        _inputs: &BlockProofPublicInputs,
+    ) -> Result<(), ProofError> {
+        unreachable!("this fixture does not verify block proofs")
+    }
+
+    fn programs(&self) -> Option<neutrin0_consensus_types::history_proof::GuestPrograms> {
+        let spec = crate::chain_backend::state_sync_tests::spec();
+        Some(neutrin0_consensus_types::history_proof::GuestPrograms {
+            execution: spec.genesis_execution,
+            chunk: spec.genesis_chunk,
+        })
+    }
+
+    fn preprove_facts(
+        &self,
+        program: &VkDigest,
+        requests: &[FactRequest],
+    ) -> Result<(), ProofError> {
+        self.calls.send((*program, requests.to_vec())).unwrap();
+        Ok(())
+    }
+}
 
 fn request(message: Vec<u8>) -> FactRequest {
     FactRequest::Signature {
@@ -77,4 +126,100 @@ fn oversize_fact_group_is_discarded_without_leaving_a_backlog() {
     );
     assert!(receiver.try_recv().is_err());
     assert_eq!(pending(&metrics), (0, 0));
+}
+
+#[tokio::test]
+async fn fact_worker_waits_between_block_jobs_and_coalesces_without_mixing_programs() {
+    let metrics = Arc::new(NodeMetrics::default());
+    let budget = Arc::new(ProvingBudget::with_metrics(1, Arc::clone(&metrics)));
+    let (sender, receiver) = mpsc::channel(8);
+    let (calls, mut observed_calls) = mpsc::unbounded_channel();
+    let first = request(vec![1]);
+    let second = request(vec![2]);
+    let other = request(vec![3]);
+    // No native call holds a permit, but two producer jobs still need it.
+    budget.set_block_backlog(2);
+    enqueue_fact_groups(&sender, [1; 8], std::slice::from_ref(&first), &metrics);
+    let worker = tokio::spawn(run_fact_worker(
+        receiver,
+        Arc::new(FactProbe { calls }),
+        Arc::clone(&budget),
+    ));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), observed_calls.recv())
+            .await
+            .is_err()
+    );
+    enqueue_fact_groups(&sender, [1; 8], std::slice::from_ref(&second), &metrics);
+    enqueue_fact_groups(&sender, [2; 8], std::slice::from_ref(&other), &metrics);
+    // Finishing one job cannot admit facts ahead of the remaining block.
+    budget.set_block_backlog(1);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), observed_calls.recv())
+            .await
+            .is_err()
+    );
+    budget.set_block_backlog(0);
+    let timeout = Duration::from_secs(5);
+    assert_eq!(
+        tokio::time::timeout(timeout, observed_calls.recv())
+            .await
+            .unwrap(),
+        Some(([1; 8], vec![first, second]))
+    );
+    assert_eq!(
+        tokio::time::timeout(timeout, observed_calls.recv())
+            .await
+            .unwrap(),
+        Some(([2; 8], vec![other]))
+    );
+    drop(sender);
+    tokio::time::timeout(timeout, worker)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(pending(&metrics), (0, 0));
+}
+
+#[tokio::test]
+async fn early_facts_require_validator_or_explicit_prover_duties() {
+    use crate::chain_backend::ChainBackend;
+    use neutrin0_consensus_engine::{Engine, ProposerKey, RetentionPolicy};
+    use neutrin0_storage::MemoryDatabase;
+
+    for retention in [
+        RetentionPolicy::Pruned,
+        RetentionPolicy::Archive,
+        RetentionPolicy::Reporter,
+    ] {
+        for opt_in in [false, true] {
+            let spec = crate::chain_backend::state_sync_tests::spec();
+            let engine = Engine::genesis(spec, MemoryDatabase::new()).unwrap();
+            let (calls, mut observed) = mpsc::unbounded_channel();
+            let backend = ChainBackend::new(engine, FactProbe { calls });
+            backend.set_retention_policy(retention).unwrap();
+            if retention == RetentionPolicy::Reporter {
+                backend
+                    .initialize_reporter(neutrin0_primitives::runtime_account([7; 20]))
+                    .unwrap();
+            }
+            backend.set_prove_foreign_blocks(opt_in);
+            let facts = [request(vec![4])];
+            backend.queue_facts(&facts);
+            if !opt_in {
+                // No worker or queue is created, even with all Guest identities installed.
+                assert!(backend.fact_jobs.lock().unwrap().is_none());
+                assert!(observed.try_recv().is_err());
+                backend.set_local_voter(ProposerKey::from_ikm(&[6; 32], 0).unwrap());
+                backend.queue_facts(&facts);
+            }
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(5), observed.recv())
+                    .await
+                    .unwrap(),
+                Some(([1; 8], facts.to_vec()))
+            );
+            backend.fact_jobs.lock().unwrap().take();
+        }
+    }
 }

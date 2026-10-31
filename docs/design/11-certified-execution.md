@@ -35,6 +35,17 @@ history record and the time it was first authenticated) is written under the
 `certified_execution` key, bounded to 64 MiB, before any successor header is
 signed. It is an execution dependency, never a finalized checkpoint.
 
+The node captures owned headers, selected receipt envelopes, consensus bodies
+and authenticated state witnesses under the engine lock. A bounded blocking
+worker verifies receipts and native consensus after releasing that lock. Its
+validation result owns the exact witness and has private fields. The commit
+rechecks the trusted incoming context, seed, History frontier and stored proven
+sources; local quorum work also rechecks its exact certificate identity and
+bootstrap admission. Durable publication still precedes successor signing.
+Cancelled callers retain their preparation slot until the blocking worker exits.
+Successor projection and signing prevalidation use the same separation and
+reject results from a changed boundary or session value.
+
 Both carry the next validator vector, seed, program set, identity-sanctions
 root, consumed participation and proving commitments and History frontier that
 the predecessor's Chunk Guest must eventually prove. Production and import of

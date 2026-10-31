@@ -10,9 +10,13 @@ fresh data directories, so announce every network as resettable.
 ## Hosts
 
 Validators prove: each needs an NVIDIA GPU, a Linux x86-64 host and a node
-built with `--features cuda` ([GPU proving](gpu-proving.md)). Full, archive and reporter nodes can run on CPU. Give every
-host a dedicated data filesystem with room for the eight-chunk retention window
-plus the storage quota below; archives keep all history and grow without bound.
+built with `--features cuda` ([GPU proving](gpu-proving.md)). Ordinary full and
+archive nodes only verify proofs and can run on CPU, including archives that
+re-execute blocks. Reporters generate Evidence proofs on demand and need proving
+resources. Full and archive nodes opt into proving with `prove_foreign_blocks`
+and executing mode. Give every host a dedicated data filesystem with room for
+the eight-chunk retention window plus the storage quota below; archives keep all
+history and grow without bound.
 Use fixed listening ports so bootnode addresses stay valid.
 
 ## Keys

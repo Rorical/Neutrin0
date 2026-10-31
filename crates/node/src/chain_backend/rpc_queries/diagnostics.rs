@@ -62,7 +62,7 @@ where
             .collect()
     }
 
-    pub(super) fn diagnostics_snapshot(&self) -> Result<DiagnosticsJson, QueryError> {
+    pub(super) async fn diagnostics_snapshot(&self) -> Result<DiagnosticsJson, QueryError> {
         let proof_only = self.is_light();
         let bootstrap_pending = self.bootstrap_pending();
         let unavailable = proof_only || bootstrap_pending;
@@ -70,24 +70,29 @@ where
         let trust_anchor_expired = light.is_some_and(|health| health.expired);
         let history_conflict = light.is_some_and(|health| health.halted);
         let sync = self.sync_status().map(|status| sync_progress(&status));
-        self.with_engine(|engine| {
+        let chain_spec_hash = self.chain_spec_hash;
+        let storage_pressure = self.storage_pressure();
+        let proof_work = self.proof_work();
+        let queued_block_proofs = self
+            .metrics
+            .block_proof_queue_pending
+            .load(Ordering::Relaxed);
+        self.rpc_engine(move |engine| {
             Ok(DiagnosticsJson {
-                chain_spec_hash: HashHex(self.chain_spec_hash),
+                chain_spec_hash: HashHex(chain_spec_hash),
                 chunk_size: engine.chain_spec().consensus.chunk_size,
                 unbonding_delay_blocks: engine.chain_spec().runtime.unbonding_delay_blocks,
                 proof_only,
                 bootstrap_pending,
                 trust_anchor_expired,
                 history_conflict,
-                storage_pressure: self.storage_pressure(),
+                storage_pressure,
                 sync,
                 bft_sessions: (!unavailable).then(|| bft_sessions(engine)),
-                proof_work: self.proof_work(),
-                queued_block_proofs: self
-                    .metrics
-                    .block_proof_queue_pending
-                    .load(Ordering::Relaxed),
+                proof_work,
+                queued_block_proofs,
             })
         })
+        .await
     }
 }

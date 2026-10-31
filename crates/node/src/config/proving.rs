@@ -1,6 +1,7 @@
 //! `[proving]` section: backend, budgets, scheduling policy and the prover
 //! account.
 
+use super::NodeRole;
 use serde::Deserialize;
 
 /// Backend used by every proof stage in this node.
@@ -65,7 +66,8 @@ pub struct ProvingConfig {
     /// Prove candidates this node did not produce (design 08). Needs
     /// `execution.mode = "execute"` so the node holds every candidate's
     /// witness; a node without a proposer key then runs the proof loop
-    /// alone.
+    /// alone. This also enables proactive Fact caching and fallback
+    /// Chunk and Evidence proving on a non-validator.
     pub prove_foreign_blocks: bool,
     /// Prove blocks of the head branch whose proposer has published no
     /// receipt once its lease has passed (design 08), rebuilding their
@@ -101,6 +103,15 @@ impl Default for ProvingConfig {
 }
 
 impl ProvingConfig {
+    /// Whether the role opts into generating proofs rather than only verifying them.
+    pub(crate) const fn generates_proofs(self, role: NodeRole) -> bool {
+        match role {
+            NodeRole::Validator | NodeRole::Reporter => true,
+            NodeRole::Full | NodeRole::Archive => self.prove_foreign_blocks,
+            NodeRole::LightClient => false,
+        }
+    }
+
     /// Local scheduling policy; independent of all chain specification parameters.
     #[must_use]
     pub const fn scheduling_policy(self) -> ProvingPolicy {

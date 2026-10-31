@@ -10,6 +10,8 @@
 //! after another receipt proved its block, and any node keeps the invalid
 //! execution claim a receipt contradicting its header supports.
 
+#[path = "support/counting_executor.rs"]
+pub mod counting_executor;
 #[path = "support/evm.rs"]
 pub mod evm;
 #[path = "support/proven.rs"]
@@ -544,17 +546,18 @@ async fn keeps_the_claim_against_a_forged_block(height: u64) {
     let forged_hash = forged.block.hash();
     let expected_parent = parents.last().map(|parent| parent.block.header.clone());
 
-    // An executing node sees the execution contradict writes that reproduce
+    // An executing prover sees the execution contradict writes that reproduce
     // the header's root: it ignores the candidate and proves the honest
     // execution of the forged header.
     let executing = build_backend(false).await;
+    let (executor, executions) = counting_executor::CountingExecutor::embedded();
+    executing.set_block_executor(executor);
     if !parents.is_empty() {
         import_candidates_blocking(&executing, parents.clone())
             .await
             .expect("the parents import");
     }
-    // Imported on the test runtime, which keeps running the proof job the
-    // import spawns.
+    executions.store(0, std::sync::atomic::Ordering::SeqCst);
     let err = executing
         .verify_and_import_candidates(vec![forged.clone()])
         .await
@@ -564,6 +567,15 @@ async fn keeps_the_claim_against_a_forged_block(height: u64) {
             if reason.contains("execution contradicts the header")),
         "{err:?}"
     );
+    // Rejection executes once. A follower must not re-execute the candidate
+    // to prepare a proving witness or start a proof job.
+    assert_eq!(executions.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(persisted_claim(&executing, &forged_hash), None);
+    executing.set_prove_foreign_blocks(true);
+    executing
+        .verify_and_import_candidates(vec![forged.clone()])
+        .await
+        .expect_err("the executing prover also rejects the divergent candidate");
     let mut proven = None;
     for _ in 0..600 {
         proven = persisted_claim(&executing, &forged_hash);

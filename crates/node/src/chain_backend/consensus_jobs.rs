@@ -1,8 +1,9 @@
 //! Event-driven complete proving with exact BFT quorum fencing.
 
+mod certification;
 mod chunk_proof;
 
-use super::{BftQuorumIdentity, ChainBackend, SyncBackendError, rejected};
+use super::{BftQuorumIdentity, ChainBackend};
 use neutrin0_consensus_engine::ProposerKey;
 use neutrin0_proof_system::ProofSystem;
 use neutrin0_storage::Database;
@@ -15,7 +16,17 @@ where
     DB::Error: core::fmt::Debug + core::fmt::Display + Send + Sync + 'static,
     P: ProofSystem + Send + Sync + 'static,
 {
-    /// Block program of the embedded set, when the backend can prove at all.
+    /// Automatic consensus work requires a validator key or an explicit prover opt-in.
+    pub(super) fn proves_consensus(&self) -> bool {
+        !self.is_light() && (self.prove_foreign_blocks() || self.local_voter().is_some())
+    }
+
+    /// Reporters generate evidence on demand without pre-proving consensus facts.
+    pub(super) fn proves_evidence(&self) -> bool {
+        self.proves_consensus() || (!self.is_light() && self.reporter_recipient().is_some())
+    }
+
+    /// Block program of the embedded set, also used by verification-only nodes.
     pub(super) fn block_program(&self) -> Option<[u32; 8]> {
         self.proof_system
             .programs()
@@ -36,11 +47,14 @@ where
         })
     }
 
-    pub(super) fn handle_quorum_reached(&self, identity: BftQuorumIdentity) {
+    pub(super) async fn handle_quorum_reached(&self, identity: BftQuorumIdentity) {
         if self.bootstrap_pending() || self.is_light() || self.block_program().is_none() {
             return;
         }
-        if let Err(error) = self.certify_quorum_execution(identity) {
+        let Ok(slot) = Arc::clone(&self.certification_slot).acquire_owned().await else {
+            return;
+        };
+        if let Err(error) = self.certify_quorum_execution(identity, slot).await {
             warn!(?identity, %error, "execution certification failed");
             return;
         }
@@ -54,6 +68,9 @@ where
             );
         }
         self.sync_programs();
+        if !self.proves_consensus() {
+            return;
+        }
         let voter = self.local_voter();
         let policy = *self.proving_policy.lock().expect("proving policy");
         let (ready, certified_at, slot_secs) =
@@ -71,44 +88,6 @@ where
             return;
         }
         self.start_consensus_proof(identity);
-    }
-
-    /// Install the quorum's certificate and certify the execution it covers,
-    /// unless another node's certificate already did.
-    fn certify_quorum_execution(
-        &self,
-        identity: BftQuorumIdentity,
-    ) -> Result<(), SyncBackendError> {
-        let executor = self.replay_executor_snapshot();
-        self.with_live_engine_mut(|engine| {
-            if engine.execution_quorum_identity(identity.chunk_id) != Some(identity) {
-                return Err(SyncBackendError::NotAvailable(
-                    "BFT quorum changed before certification".into(),
-                ));
-            }
-            if engine.certified_execution_witness().is_none() {
-                let certificate = engine
-                    .bft_session(identity.chunk_id)
-                    .and_then(neutrin0_consensus_engine::BftSession::certificate)
-                    .ok_or_else(|| {
-                        SyncBackendError::NotAvailable("complete certificate unavailable".into())
-                    })?;
-                let mut prepared = engine
-                    .prepare_bft_consensus_chunk(identity.chunk_id, self.proof_system.as_ref())
-                    .map_err(rejected)?;
-                engine
-                    .install_finality_certificate(&mut prepared, certificate)
-                    .map_err(rejected)?;
-                engine
-                    .certify_execution_chunk(
-                        &prepared,
-                        self.proof_system.as_ref(),
-                        executor.as_deref(),
-                    )
-                    .map_err(rejected)?;
-            }
-            Ok(())
-        })
     }
 
     /// Whether this node proves the certified chunk now, with the certification

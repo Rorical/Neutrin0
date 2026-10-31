@@ -8,7 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  SP1_PROVER: cpu
 
 jobs:
   supply-chain:
@@ -48,6 +47,10 @@ jobs:
   rust:
     name: rust
     runs-on: ubuntu-latest
+    env:
+      # Avoid runner-specific LLVM codegen failures with target-cpu=native.
+      # This host target override does not reach SP1 or WASM Guest builds.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C target-cpu=x86-64-v3"
     steps:
       - uses: actions/checkout@v7
 

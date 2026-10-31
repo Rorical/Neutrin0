@@ -46,8 +46,11 @@ networking, the sync driver, the transaction pool, JSON-RPC and proof workers.
 The engine owns chain state and deterministic orchestration: production,
 import, fork choice, chunk BFT, finalization, retention, bootstrap and signing
 journals. `ChainBackend` in the node crate connects it to execution, proving,
-gossip, RPC and sync, and runs proof generation and verification outside the
-engine lock. The configured role (`validator`, `full`, `reporter`, `archive` or
+gossip, RPC and sync. Proof generation, candidate receipt verification and native
+certificate validation run in blocking workers outside the engine lock. Workers
+capture owned inputs under the lock and recheck the live boundary before
+publishing results. Store mutations, branch replay and signing stay serialized.
+The configured role (`validator`, `full`, `reporter`, `archive` or
 `light-client`) decides which of these run and what the node retains. The
 [crate layout](01-crate-layout.md) maps each component to its crate.
 

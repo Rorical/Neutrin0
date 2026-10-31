@@ -31,6 +31,9 @@ where
     /// Triggered by evidence arrival, finalization and block-production events.
     /// Proving never holds the engine lock or blocks the BFT message task.
     pub(in crate::chain_backend) fn start_evidence_jobs(&self) {
+        if !self.proves_evidence() {
+            return;
+        }
         self.refresh_reporter_tracking();
         let Some(executor) = self.block_executor_snapshot() else {
             return;

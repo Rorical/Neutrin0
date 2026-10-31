@@ -48,33 +48,37 @@ fn register_system_methods(module: &mut RpcModule<RpcContext>) -> Result<(), Rpc
                 .head()
                 .await
                 .map_err(|error| query_err(&error))?;
-            Ok::<_, ErrorObjectOwned>(HealthJson {
-                peers: ctx.backend().peer_count(),
-                is_syncing: ctx.backend().is_syncing(),
-                runtime_available: ctx.backend().runtime_available(),
-                mempool: u64::try_from(ctx.backend().mempool_len()).unwrap_or(u64::MAX),
+            ctx.blocking(move |backend| HealthJson {
+                peers: backend.peer_count(),
+                is_syncing: backend.is_syncing(),
+                runtime_available: backend.runtime_available(),
+                mempool: u64::try_from(backend.mempool_len()).unwrap_or(u64::MAX),
                 head_height: head.height,
             })
+            .await
         })
         .map_err(reg_err)?;
 
     module
         .register_async_method("system_info", |_, ctx, _| async move {
-            Ok::<_, ErrorObjectOwned>(SystemInfoJson {
-                runtime_code_hash: ctx.backend().runtime_code_hash().map(HashHex::from),
+            ctx.blocking(|backend| SystemInfoJson {
+                runtime_code_hash: backend.runtime_code_hash().map(HashHex::from),
             })
+            .await
         })
         .map_err(reg_err)?;
 
     module
         .register_async_method("programs_status", |_, ctx, _| async move {
-            Ok::<_, ErrorObjectOwned>(ctx.backend().programs_status())
+            ctx.blocking(crate::backend::RpcBackend::programs_status)
+                .await
         })
         .map_err(reg_err)?;
 
     module
         .register_async_method("proving_status", |_, ctx, _| async move {
-            Ok::<_, ErrorObjectOwned>(ctx.backend().proving_status())
+            ctx.blocking(crate::backend::RpcBackend::proving_status)
+                .await
         })
         .map_err(reg_err)?;
 

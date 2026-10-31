@@ -195,8 +195,14 @@ no protocol path abandons a certificate.
 
 ## Finalization
 
-The node validates the candidate before BFT, obtains the certificate, proves
-outside the engine lock and verifies the receipt before atomically persisting
+The node captures branch inputs under the engine lock and verifies the selected
+receipts and candidate on a blocking worker before BFT. Native certification
+also validates outside the lock, then rechecks the live authority before its
+durable execution commit. One reserved Chunk job covers preparation and proving;
+repeated BFT notifications cannot start concurrent preparations. Preparation
+reconstructs receipts outside the lock and requires the exact already-certified
+witness before reusing its complete consensus verdict. The node proves outside
+the engine lock and verifies the receipt before atomically persisting
 finality and the next context. Gossip and RPC imports go through the same
 checks. There is no proofless or execution-only finalization path. Before the
 proof finishes, verified block receipts and full native validation can
@@ -267,8 +273,8 @@ and [its security conditions](https://ethresear.ch/t/security-of-bls-batch-verif
 ## Real-proof verification
 
 Native tests cover adversarial boundaries, signatures and quorums, proof keys,
-rotation and accountability. Real compressed composition is a separate gate for
-each set of programs: the ignored test `consensus_guest_real_compressed_recursion`
-in `crates/runtime-host/tests/consensus_chunk.rs` proves blocks and a Chunk with
-the CPU prover, and the evidence-to-chunk path is covered in
-[evidence proofs](16-evidence-proofs.md).
+rotation and accountability. The ignored integration tests in
+`crates/runtime-host/tests/consensus_chunk.rs` prove Block receipts and a Chunk
+with real compressed recursion. The evidence-to-chunk path is covered in
+[evidence proofs](16-evidence-proofs.md). Commands and hardware requirements are
+in [proving acceptance](../gpu-proving.md#gpu-tests).

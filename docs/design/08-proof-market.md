@@ -590,6 +590,13 @@ start, and any node may publish a chunk proof. If round 0 of `N + 1` fails, the
 later round's leader names whatever valid proof it holds. Validators need no
 hardware beyond verification.
 
+Automatic proving follows local duties. Ordinary full and archive nodes verify
+receipts without generating proofs. A non-validator explicitly opts into the
+prover loop with `prove_foreign_blocks = true` in executing mode; it then also
+precomputes Facts and backs up Chunk and Evidence proving. A reporter generates
+Evidence proofs on demand and joins consensus proving only through that opt-in.
+These local choices do not restrict who may publish a valid proof.
+
 ## Carrier rule
 
 The successor's execution context does not need chunk `N`'s certificate. Its
@@ -951,7 +958,7 @@ replaced height.
 | `annual_issuance_bps` | `RuntimePolicy` | 200 | Yearly issuance as a share of total stake, half to the block's prover and half to its chunk's prover |
 | `abandonment_penalty_amount` | `RuntimePolicy` | 1 token | Deduction for a signed block the canonical chain replaced after its window; zero disables the offence |
 | `MAX_ACCRUAL_SLOTS` | runtime constant | 8 | Slots of issuance one block may accrue |
-| `[proving] prove_foreign_blocks` | node | false | Prove candidates this node did not produce; requires `mode = "execute"` |
+| `[proving] prove_foreign_blocks` | node | false | Prove foreign candidates and opt a non-validator into Fact caching and fallback Chunk and Evidence proving; requires `mode = "execute"` |
 | `[proving] rescue_unproven_blocks` | node | on for CUDA, off for CPU | Prove head-branch blocks whose proposer published no receipt after its lease |
 | `[proving] prioritize_block_proofs` | node | true | Start a chunk proof only with no block proof pending, waiting at most one slot |
 | `[proving] chunk_proof_fallback_secs` | node | 180 | Delay before validators other than the next round-0 leader prove a chunk |

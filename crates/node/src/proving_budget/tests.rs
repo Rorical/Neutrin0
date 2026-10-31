@@ -328,11 +328,13 @@ fn panicking_native_call_releases_actual_running_and_stage_gauges() {
     let metrics = Arc::new(NodeMetrics::default());
     let budget = Arc::new(ProvingBudget::with_metrics(2, Arc::clone(&metrics)));
     assert!(
-        std::panic::catch_unwind(|| {
+        // The watch sender has interior mutability; the assertion below checks
+        // that the native permit and its gauges survive this deliberate panic.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _permit = budget.acquire(ProofStage::Block);
             assert_eq!(metrics.proof_pipeline.budget.inflight(ProofStage::Block), 1);
             panic!("native proving panic");
-        })
+        }))
         .is_err()
     );
     assert_eq!(metrics.proof_pipeline.budget.inflight(ProofStage::Block), 0);

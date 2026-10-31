@@ -140,7 +140,7 @@ pub async fn run(config: NodeConfig) -> Result<(), NodeError> {
     let reporter = config
         .reporter_reward_address()
         .map_err(NodeError::Engine)?;
-    if config.role == NodeRole::LightClient {
+    if !config.proving.generates_proofs(config.role) {
         return Box::pin(run_with_prover(config, reporter, || {
             Ok(sp1_sdk::blocking::ProverClient::builder().light().build())
         }))
@@ -242,8 +242,12 @@ async fn run_with_prover<P: ProgramProver + Send + Sync + 'static>(
             let forked = chain_spec.fork.is_some();
             let engine = engine::open_engine(db, chain_spec, spec_file, genesis_package).await?;
             let proof_system = engine::build_proof_system(genesis_programs, build_prover).await?;
-            info!(backend = ?config.proving.backend, cuda_device = ?config.proving.cuda_device,
-                    concurrency = config.proving.concurrency, "SP1 proving backend initialized");
+            if config.proving.generates_proofs(config.role) {
+                info!(backend = ?config.proving.backend, cuda_device = ?config.proving.cuda_device,
+                        concurrency = config.proving.concurrency, "SP1 proving backend initialized");
+            } else {
+                info!("SP1 verification-only backend initialized");
+            }
             info!(
                 chain_id = config.chain_id,
                 head_height = engine.head_height(),

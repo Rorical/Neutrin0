@@ -27,6 +27,9 @@ async fn run_fact_worker<P: ProofSystem + Send + Sync + 'static>(
         Some(job) => Some(job),
         None => rx.recv().await,
     } {
+        // Coalesce after the foreground queue drains, so waiting work joins
+        // one batch instead of taking the device between every pair of blocks.
+        budget.wait_for_block_proofs().await;
         let FactJob {
             program,
             mut requests,
@@ -112,7 +115,7 @@ where
     P: ProofSystem + Send + Sync + 'static,
 {
     pub(super) fn queue_facts(&self, requests: &[FactRequest]) {
-        if requests.is_empty() || self.fact_program().is_none() {
+        if !self.proves_consensus() || requests.is_empty() || self.fact_program().is_none() {
             return;
         }
         // Facts are proven under the fact program of the chunk being built,

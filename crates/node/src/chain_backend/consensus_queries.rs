@@ -52,17 +52,20 @@ where
         })
     }
 
-    fn consensus_query<R>(
+    async fn consensus_query<R: Send + 'static>(
         &self,
-        f: impl FnOnce(&Engine<DB>) -> Result<R, QueryError>,
+        f: impl FnOnce(&Engine<DB>) -> Result<R, QueryError> + Send + 'static,
     ) -> Result<R, QueryError> {
         if self.is_light() {
             return Err(QueryError::StateUnavailable);
         }
-        self.with_engine(f)
+        self.rpc_engine(f).await
     }
-    pub(super) fn query_chunk(&self, id: Option<u64>) -> Result<Option<ChunkJson>, QueryError> {
-        self.consensus_query(|engine| {
+    pub(super) async fn query_chunk(
+        &self,
+        id: Option<u64>,
+    ) -> Result<Option<ChunkJson>, QueryError> {
+        self.consensus_query(move |engine| {
             let Some(id) = id.or_else(|| engine.latest_finalized_chunk_id()) else {
                 return Ok(None);
             };
@@ -88,9 +91,13 @@ where
                         .is_some(),
             )))
         })
+        .await
     }
-    pub(super) fn query_certificate(&self, id: u64) -> Result<Option<CertificateJson>, QueryError> {
-        self.consensus_query(|engine| {
+    pub(super) async fn query_certificate(
+        &self,
+        id: u64,
+    ) -> Result<Option<CertificateJson>, QueryError> {
+        self.consensus_query(move |engine| {
             let Some(cert) = certificate(engine, id)? else {
                 return Ok(None);
             };
@@ -131,18 +138,20 @@ where
                 artifact,
             }))
         })
+        .await
     }
-    pub(super) fn query_artifact(
+    pub(super) async fn query_artifact(
         &self,
         id: ArtifactIdJson,
     ) -> Result<Option<ArtifactInfoJson>, QueryError> {
-        self.consensus_query(
-            |engine| Ok(artifact(engine, &id)?.map(|artifact| info(id, &artifact))),
-        )
+        self.consensus_query(move |engine| {
+            Ok(artifact(engine, &id)?.map(|artifact| info(id, &artifact)))
+        })
+        .await
     }
-    pub(super) fn query_artifact_bytes(
+    pub(super) async fn query_artifact_bytes(
         &self,
-        id: &ArtifactIdJson,
+        id: ArtifactIdJson,
         expected: Hash,
         offset: u64,
         length: u32,
@@ -152,8 +161,8 @@ where
                 "artifact slice length must be between 1 and 1048576".into(),
             ));
         }
-        self.consensus_query(|engine| {
-            let artifact = artifact(engine, id)?.ok_or(QueryError::ArtifactUnavailable)?;
+        self.consensus_query(move |engine| {
+            let artifact = artifact(engine, &id)?.ok_or(QueryError::ArtifactUnavailable)?;
             let hash = blake3_256(&artifact.bytes);
             if expected != hash {
                 return Err(QueryError::ArtifactChanged);
@@ -175,8 +184,9 @@ where
                 bytes: BytesHex(artifact.bytes[offset_index..end].to_vec()),
             })
         })
+        .await
     }
-    pub(super) fn query_chain_events(
+    pub(super) async fn query_chain_events(
         &self,
         after: Option<ChainCursorJson>,
         limit: u32,
@@ -186,7 +196,7 @@ where
                 "event page limit must be between 1 and 256".into(),
             ));
         }
-        self.consensus_query(|engine| {
+        self.consensus_query(move |engine| {
             let store = engine.store();
             let state = store
                 .chain_event_state()
@@ -220,5 +230,6 @@ where
                 has_more: end < state.next - 1,
             })
         })
+        .await
     }
 }

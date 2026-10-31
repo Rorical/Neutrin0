@@ -50,6 +50,8 @@ const MESSAGE_BUFFER: u32 = 4;
 /// Live subscriptions of each kind across all connections. Every one polls
 /// the backend outside the request governor, so the total stays fixed.
 const SUBSCRIPTIONS: usize = 64;
+/// Synchronous operator reads running or queued on the blocking pool.
+const BLOCKING_STATUS_READS: usize = 64;
 /// Live subscriptions of each kind one client may hold.
 const SUBSCRIPTIONS_PER_CLIENT: usize = 8;
 /// Live subscriptions one connection may hold.
@@ -137,6 +139,7 @@ pub fn build_module_with(
     let mut module = RpcModule::new(RpcContext {
         backend,
         runtime_call_timeout,
+        blocking_slots: Arc::new(tokio::sync::Semaphore::new(BLOCKING_STATUS_READS)),
         ethereum_filters: Arc::new(ethereum::Filters::default()),
         chain_subscriptions: Arc::new(clients::ClientSlots::new(
             SUBSCRIPTIONS,
@@ -298,6 +301,7 @@ async fn accept<R, H>(
 pub struct RpcContext {
     backend: Arc<dyn RpcBackend>,
     runtime_call_timeout: Duration,
+    blocking_slots: Arc<tokio::sync::Semaphore>,
     ethereum_filters: Arc<ethereum::Filters>,
     chain_subscriptions: Arc<clients::ClientSlots>,
     ethereum_subscriptions: Arc<clients::ClientSlots>,
@@ -307,5 +311,24 @@ impl RpcContext {
     /// Borrow the underlying backend.
     pub fn backend(&self) -> &Arc<dyn RpcBackend> {
         &self.backend
+    }
+
+    /// Status backends may wait on synchronous locks or storage. Keep those
+    /// waits off the transport workers and retain the cap after cancellation.
+    async fn blocking<R: Send + 'static>(
+        &self,
+        read: impl FnOnce(&dyn RpcBackend) -> R + Send + 'static,
+    ) -> Result<R, jsonrpsee::types::ErrorObjectOwned> {
+        let backend = Arc::clone(&self.backend);
+        let slot = Arc::clone(&self.blocking_slots)
+            .acquire_owned()
+            .await
+            .map_err(|error| errors::query_err(&crate::QueryError::Storage(error.to_string())))?;
+        tokio::task::spawn_blocking(move || {
+            let _slot = slot;
+            read(backend.as_ref())
+        })
+        .await
+        .map_err(|error| errors::query_err(&crate::QueryError::Storage(error.to_string())))
     }
 }

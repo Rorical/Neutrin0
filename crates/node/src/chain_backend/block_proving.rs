@@ -89,6 +89,12 @@ where
         self.proving_budget.set_capacity(concurrency);
     }
 
+    /// Publish local demand before dispatch so optional facts cannot enter
+    /// between consecutive block jobs merely because no permit is queued yet.
+    pub(crate) fn set_block_proof_backlog(&self, jobs: usize) {
+        self.proving_budget.set_block_backlog(jobs);
+    }
+
     /// Address credited for the block receipts this node proves (design 08).
     pub fn set_prover_address(&self, address: Hash) {
         self.with_engine_mut(|engine| engine.set_prover_address(address));

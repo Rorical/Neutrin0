@@ -186,8 +186,6 @@ async fn forge_and_cast_deploy_transfer_simulate_and_read_receipts() {
             "cast",
             &[
                 "send",
-                "--create",
-                &bytecode,
                 "--rpc-url",
                 &url,
                 "--private-key",
@@ -199,6 +197,8 @@ async fn forge_and_cast_deploy_transfer_simulate_and_read_receipts() {
                 "--priority-gas-price",
                 "3",
                 "--json",
+                "--create",
+                &bytecode,
             ],
             &cwd,
         )

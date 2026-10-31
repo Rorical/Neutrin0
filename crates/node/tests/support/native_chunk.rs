@@ -1,7 +1,7 @@
 //! Explicit test-only full-consensus adapter over mock SP1 block execution.
 //!
 //! No cryptographic chunk proof is claimed: the outer statement is checked
-//! natively. Real recursive verification has its own runtime-host CPU gate.
+//! natively. Real recursive verification has its own runtime-host CUDA gate.
 use neutrin0_proof_system::{ProofError, ProofSystem};
 use neutrin0_prover_chunk::consensus::{ConsensusWitness, validate_consensus};
 use neutrin0_runtime_host::{Sp1HostError, Sp1ProofSystem};

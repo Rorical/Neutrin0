@@ -33,29 +33,32 @@ where
         let Some(executor) = self.block_executor_snapshot() else {
             return (Body::default(), 0);
         };
-        self.with_engine(|engine| {
-            let mut body = Body::default();
-            let Some(policy) = evidence_policy(engine, executor.as_ref()) else {
-                return (body, 0);
-            };
-            let Some(height) = engine.head_height().checked_add(1) else {
-                return (body, 0);
-            };
-            let Ok(anchor) = engine.evidence_anchor(height) else {
-                return (body, 0);
-            };
-            let bytes = select_evidence_admissions(
-                engine,
-                executor.as_ref(),
-                &policy,
-                height,
-                &anchor,
-                &mut body,
-            );
-            let ordinary_count = append_ordinary_transactions(&mut body, transactions, bytes);
-            (body, ordinary_count)
-        })
+        self.with_engine(|engine| selected_body(engine, executor.as_ref(), transactions))
     }
+}
+
+/// Shared selection for production and disposable pending execution.
+pub(in crate::chain_backend) fn selected_body<DB: Database>(
+    engine: &neutrin0_consensus_engine::Engine<DB>,
+    executor: &dyn ErasedBlockExecutor,
+    transactions: &[Vec<u8>],
+) -> (Body, usize)
+where
+    DB::Error: core::fmt::Debug + core::fmt::Display,
+{
+    let mut body = Body::default();
+    let Some(policy) = evidence_policy(engine, executor) else {
+        return (body, 0);
+    };
+    let Some(height) = engine.head_height().checked_add(1) else {
+        return (body, 0);
+    };
+    let Ok(anchor) = engine.evidence_anchor(height) else {
+        return (body, 0);
+    };
+    let bytes = select_evidence_admissions(engine, executor, &policy, height, &anchor, &mut body);
+    let ordinary_count = append_ordinary_transactions(&mut body, transactions, bytes);
+    (body, ordinary_count)
 }
 
 /// Push every admissible pooled receipt into `body` in pool order, with its

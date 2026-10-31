@@ -1,5 +1,5 @@
 //! `eth_subscribe`: `newHeads` and `logs` streams driven by a polling filter.
-use super::codec::{error, fixed, q};
+use super::codec::{fixed, q};
 use super::filters::{FilterKind, PollFilter, initial_filter_anchor, poll_filter};
 use super::logs::LogSelector;
 use super::render::block_json;
@@ -70,15 +70,18 @@ pub(super) async fn subscribe(
         pending: BTreeSet::new(),
     };
     loop {
-        let changes =
-            tokio::time::timeout(ctx.runtime_call_timeout, poll_filter(&ctx, &mut filter))
-                .await
-                .map_err(|_| error("Ethereum subscription poll timed out"))??;
-        for change in changes {
-            let value = subscription_value(&ctx, kind, change).await?;
-            tokio::select! {
-                () = sink.closed() => return Ok(()),
-                sent = sink.send(serde_json::value::to_raw_value(&value)?) => sent?,
+        let changes = tokio::select! {
+            () = sink.closed() => return Ok(()),
+            changes = tokio::time::timeout(ctx.runtime_call_timeout, subscription_changes(&ctx, kind, &mut filter)) => changes,
+        };
+        // A short-lived backend stall must not discard the subscription or its
+        // cursor. Retry from the same anchor after the normal polling interval.
+        if let Ok(changes) = changes {
+            for value in changes? {
+                tokio::select! {
+                    () = sink.closed() => return Ok(()),
+                    sent = sink.send(serde_json::value::to_raw_value(&value)?) => sent?,
+                }
             }
         }
         tokio::select! {
@@ -138,3 +141,24 @@ async fn subscription_value(
     }
     Ok(value)
 }
+
+/// Render the whole poll before publishing its cursor. Cancellation during a
+/// header projection leaves the previous anchor intact for the next attempt.
+async fn subscription_changes(
+    ctx: &RpcContext,
+    kind: &str,
+    filter: &mut PollFilter,
+) -> Result<Vec<Value>, ErrorObjectOwned> {
+    let mut next = filter.clone();
+    next.last_used = Instant::now();
+    let changes = poll_filter(ctx, &mut next).await?;
+    let mut values = Vec::with_capacity(changes.len());
+    for change in changes {
+        values.push(subscription_value(ctx, kind, change).await?);
+    }
+    *filter = next;
+    Ok(values)
+}
+
+#[cfg(test)]
+mod tests;

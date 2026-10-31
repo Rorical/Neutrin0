@@ -272,10 +272,12 @@ under the running backend, including the Guest's own limits
 ([chunk proofs](12-chunk-proofs.md#provability-before-voting)). The verdict is
 reused while its inputs are unchanged: the session's chunk hash, branch end and
 named receipts, the backend's Guest programs and the incoming boundary. The
-node gathers the witness under the engine lock and validates it outside; a new
-proposal selection validates again, installing a boundary discards every
-verdict, and whether the backend can still prove under the boundary's programs
-is checked on every use.
+node captures owned headers, selected receipt envelopes and state witnesses
+under the engine lock, then verifies receipts and validates the candidate on a
+blocking worker outside the lock. Recording the verdict rechecks the session's
+exact inputs. A new proposal selection validates again, installing a boundary
+discards every verdict, and whether the backend can still prove under the
+boundary's programs is checked on every use.
 
 The node keeps its first verified receipt for a block. Another valid encoding
 of the same statement cannot replace bytes already signed locally, and a
