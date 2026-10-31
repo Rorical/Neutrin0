@@ -175,6 +175,16 @@ WebSocket and polling-filter checks at height 960. Each group exported its
 covering History proof. These functional results and their scope are recorded in
 [GPU proving](../gpu-proving.md#validated-hardware-and-results).
 
+The RPC and consensus-lock repair passed the locked workspace build, ordinary
+suite (1,758 passed, no failures, 13 ignored), strict all-target Clippy and format
+checks on macOS ARM64, plus the Linux CUDA release build. On the same running
+network, four HTTP clients completed 1,140 mixed batches with 4,560 successful
+responses and no failures across execution certification and real Chunk finality
+at height 1,536. A real ERC-20 transfer passed canonical header/log subscriptions,
+polling filters, exact fee and nonce accounting, and covering History export.
+Database, signing journals and Guest/WASM fingerprints were preserved. These
+results cover the tested load and finalization boundary.
+
 ## Open verification work
 
 A real-proof result applies only to the Guest ELFs it ran on, and any change to a

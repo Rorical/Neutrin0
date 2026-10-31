@@ -255,8 +255,28 @@ passed against proof-finalized state:
 The application and wallet-client groups finalized at height 832; the precompile
 group finalized at height 896. The subscription transfer finalized at height
 960. Each group exported the History proof covering its transactions. These
-functional acceptance results cover the tested calls and transactions. Sustained
-RPC availability and maximum throughput require separate acceptance.
+functional acceptance results cover the tested calls and transactions.
+
+After the RPC and consensus-lock repair, the same network resumed its database
+and signing journals with unchanged Guest and WASM fingerprints. Four concurrent
+HTTP clients completed 1,140 mixed batches (4,560 responses) with no failures
+across a fresh execution certificate and real Chunk finalization at height 1,536.
+Each batch checked the finalized block, pinned historical receipts, an ERC-20
+`eth_call` and `eth_feeHistory`, with the existing request limits and two-second
+Ethereum deadline. A real zero-amount ERC-20 transfer also reached proof finality:
+`newHeads` covered every canonical header in the observed range, filtered log
+subscriptions and block/log filters included its canonical event, exact fees and
+nonces matched, and unsubscribe and uninstall succeeded. The covering History
+proof was exported and its file hash checked. This establishes availability for
+the tested load and boundary; it does not establish maximum throughput.
+
+The host-side repair also passed the locked workspace build and ordinary suite
+on macOS ARM64 (1,758 passed, no failures, 13 ignored), strict all-target workspace
+Clippy and format checks. Regression cases hold receipt or certificate validation
+open while concurrent finalized-block, receipt, call and fee-history RPC batches
+complete. They also cover stale validation rejection, bootstrap admission,
+certification timestamps and subscription cursor preservation on timeout. The
+Linux CUDA release build passed before the live network update.
 
 The Evidence pipeline resumed previously generated CUDA checkpoints and verified
 them again before completing the remaining stages. Device memory samples reached
