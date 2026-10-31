@@ -22,13 +22,12 @@
 # Trade-off: binaries produced here are not portable to hosts with a
 # weaker ISA. That is fine because:
 #   - `target/` is gitignored,
-#   - CI builds and runs on the same runner (no artifact distribution),
+#   - CI overrides this with a fixed x86-64-v3 baseline,
 #   - the node binary is meant to be rebuilt from source per host.
 #
-# To opt out for a single build, set
-#   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=""
-# in the environment. To opt out permanently, override this section in
-# `~/.cargo/config.toml`.
+# To use the same fixed AVX2 baseline as CI, set
+#   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=x86-64-v3"
+# in the environment. An empty value does not remove the flags below.
 
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "target-cpu=native"]
