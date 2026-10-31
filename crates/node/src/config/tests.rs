@@ -381,3 +381,25 @@ async fn unsupported_cuda_is_rejected_without_cpu_fallback() {
     };
     assert!(error.contains(expected), "{error}");
 }
+
+#[test]
+fn only_proving_roles_initialize_a_native_prover() {
+    for role in [
+        NodeRole::Validator,
+        NodeRole::Full,
+        NodeRole::Archive,
+        NodeRole::Reporter,
+        NodeRole::LightClient,
+    ] {
+        let mut proving = ProvingConfig::default();
+        assert_eq!(
+            proving.generates_proofs(role),
+            matches!(role, NodeRole::Validator | NodeRole::Reporter)
+        );
+        proving.prove_foreign_blocks = true;
+        assert_eq!(
+            proving.generates_proofs(role),
+            role != NodeRole::LightClient
+        );
+    }
+}

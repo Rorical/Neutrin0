@@ -14,6 +14,12 @@ node ([proof-following nodes](07-proof-following-nodes.md)) and executes only
 with `[execution] mode = "execute"`. It prunes transaction bodies, execution
 witnesses and old state as a full node does and keeps no complete History tree.
 
+A reporter initializes a proving backend for Evidence jobs. It generates the
+Facts those jobs need on demand and, in executing mode, honest Block receipts
+needed to report divergent execution. It does not pre-prove every header or
+vote or start automatic Chunk proofs. An explicit foreign-block proving opt-in
+also enables consensus proving as described in [the proof market](08-proof-market.md).
+
 ## Configuration
 
 ```toml

@@ -15,7 +15,17 @@ where
     DB::Error: core::fmt::Debug + core::fmt::Display + Send + Sync + 'static,
     P: ProofSystem + Send + Sync + 'static,
 {
-    /// Block program of the embedded set, when the backend can prove at all.
+    /// Automatic consensus work requires a validator key or an explicit prover opt-in.
+    pub(super) fn proves_consensus(&self) -> bool {
+        !self.is_light() && (self.prove_foreign_blocks() || self.local_voter().is_some())
+    }
+
+    /// Reporters generate evidence on demand without pre-proving consensus facts.
+    pub(super) fn proves_evidence(&self) -> bool {
+        self.proves_consensus() || (!self.is_light() && self.reporter_recipient().is_some())
+    }
+
+    /// Block program of the embedded set, also used by verification-only nodes.
     pub(super) fn block_program(&self) -> Option<[u32; 8]> {
         self.proof_system
             .programs()
@@ -54,6 +64,9 @@ where
             );
         }
         self.sync_programs();
+        if !self.proves_consensus() {
+            return;
+        }
         let voter = self.local_voter();
         let policy = *self.proving_policy.lock().expect("proving policy");
         let (ready, certified_at, slot_secs) =

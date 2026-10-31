@@ -49,6 +49,14 @@ true`, which proves candidates it did not produce from those witnesses and
 publishes their receipts; startup refuses the key in `proof_follow` mode. A
 node with `prove_foreign_blocks` and no proposer key runs the proof loop alone.
 
+Execution mode and proving duties are independent. Ordinary full and archive
+nodes use a verification-only proof backend and generate no Fact, Evidence or
+Chunk proofs. Validators generate proofs; reporters generate Evidence proofs
+with any required Facts on demand. Setting `prove_foreign_blocks = true` opts a
+non-validator into the prover loop, proactive Fact caching and fallback Chunk
+and Evidence proving. It does not grant a validator key or signing authority.
+Light clients only verify proofs.
+
 A proof-following node still installs its WASM runtime, for production, RPC
 queries, transaction admission and program authentication. Its engine runs
 with `StateSource::ReceiptDiffs`: branch replay applies retained diffs, and

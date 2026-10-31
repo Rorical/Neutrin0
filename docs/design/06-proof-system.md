@@ -12,16 +12,16 @@ by the chain specification.
 
 | Proof | Establishes | Consumed by |
 | --- | --- | --- |
-| Fact proof | An exact signature or aggregate-signature verdict, or the rejection of a block receipt | Evidence Guest, by recursion |
+| Fact proof | An exact signature or aggregate-signature verdict, or the rejection of a block receipt | Evidence and Chunk Guests, by recursion |
 | Evidence proof | A batch of objective offences and their historical membership | Block Guest, by recursion |
 | Block proof (receipt) | The state transition over authenticated state, its execution commitments and admitted sanctions | Chunk Guest, by recursion |
 | Chunk proof | Block composition and continuity, BFT finality, VRF eligibility, validator rotation, the compact next boundary and the previous chunk's receipt | Node finalization and import, and the next Chunk Guest |
 | History proof | The latest finalized chunk proof: the chain from the specification's start under one chain binding, across program switches | Light clients and snapshot bootstrap |
 
 Transactions are checked inside the block state transition; there is no
-separate transaction proof. Fact-to-evidence, evidence-to-block,
-block-to-chunk and chunk-to-chunk composition all use SP1's optimized recursive
-verification syscall.
+separate transaction proof. Fact-to-evidence, optional Fact-to-chunk,
+evidence-to-block, block-to-chunk and chunk-to-chunk composition all use SP1's
+optimized recursive verification syscall.
 
 There is no History Guest. Each Chunk Guest after the specification's first
 chunk verifies the previous chunk's receipt and requires it to end exactly at

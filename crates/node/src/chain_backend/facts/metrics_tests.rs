@@ -35,6 +35,14 @@ impl ProofSystem for FactProbe {
         unreachable!("this fixture does not verify block proofs")
     }
 
+    fn programs(&self) -> Option<neutrin0_consensus_types::history_proof::GuestPrograms> {
+        let spec = crate::chain_backend::state_sync_tests::spec();
+        Some(neutrin0_consensus_types::history_proof::GuestPrograms {
+            execution: spec.genesis_execution,
+            chunk: spec.genesis_chunk,
+        })
+    }
+
     fn preprove_facts(
         &self,
         program: &VkDigest,
@@ -171,4 +179,47 @@ async fn fact_worker_waits_between_block_jobs_and_coalesces_without_mixing_progr
         .unwrap()
         .unwrap();
     assert_eq!(pending(&metrics), (0, 0));
+}
+
+#[tokio::test]
+async fn early_facts_require_validator_or_explicit_prover_duties() {
+    use crate::chain_backend::ChainBackend;
+    use neutrin0_consensus_engine::{Engine, ProposerKey, RetentionPolicy};
+    use neutrin0_storage::MemoryDatabase;
+
+    for retention in [
+        RetentionPolicy::Pruned,
+        RetentionPolicy::Archive,
+        RetentionPolicy::Reporter,
+    ] {
+        for opt_in in [false, true] {
+            let spec = crate::chain_backend::state_sync_tests::spec();
+            let engine = Engine::genesis(spec, MemoryDatabase::new()).unwrap();
+            let (calls, mut observed) = mpsc::unbounded_channel();
+            let backend = ChainBackend::new(engine, FactProbe { calls });
+            backend.set_retention_policy(retention).unwrap();
+            if retention == RetentionPolicy::Reporter {
+                backend
+                    .initialize_reporter(neutrin0_primitives::runtime_account([7; 20]))
+                    .unwrap();
+            }
+            backend.set_prove_foreign_blocks(opt_in);
+            let facts = [request(vec![4])];
+            backend.queue_facts(&facts);
+            if !opt_in {
+                // No worker or queue is created, even with all Guest identities installed.
+                assert!(backend.fact_jobs.lock().unwrap().is_none());
+                assert!(observed.try_recv().is_err());
+                backend.set_local_voter(ProposerKey::from_ikm(&[6; 32], 0).unwrap());
+                backend.queue_facts(&facts);
+            }
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(5), observed.recv())
+                    .await
+                    .unwrap(),
+                Some(([1; 8], facts.to_vec()))
+            );
+            backend.fact_jobs.lock().unwrap().take();
+        }
+    }
 }

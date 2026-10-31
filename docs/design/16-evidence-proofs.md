@@ -451,8 +451,16 @@ until a proof-bound report is ready.
 
 ## Fact cache and scheduling
 
-Fact receipts are local acceleration artifacts and are never gossiped. A
-bounded queue of eight jobs, each at most 2 MiB, feeds one blocking worker.
+Fact receipts are local acceleration artifacts and are never gossiped.
+Only validators and nodes explicitly opting into foreign-block proving enqueue
+proactive Facts from headers and BFT messages. Reporters obtain the Facts needed
+for an Evidence proof on demand. Ordinary full and archive nodes retain and
+relay admissible raw evidence and verify incoming receipts without launching
+Fact, Evidence or Chunk proof jobs. An executing node also needs proving duties
+to generate the honest Block receipt for a divergent-execution claim; every
+node may still retain a claim supported by a received receipt.
+
+A bounded queue of eight jobs, each at most 2 MiB, feeds one blocking worker.
 Before taking its next batch, optional precomputation waits while local Block
 proof jobs are queued or running, including the handoff between consecutive
 native calls. Existing device waiters retain their admission priority, and a

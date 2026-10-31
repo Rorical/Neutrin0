@@ -115,7 +115,7 @@ where
     P: ProofSystem + Send + Sync + 'static,
 {
     pub(super) fn queue_facts(&self, requests: &[FactRequest]) {
-        if requests.is_empty() || self.fact_program().is_none() {
+        if !self.proves_consensus() || requests.is_empty() || self.fact_program().is_none() {
             return;
         }
         // Facts are proven under the fact program of the chunk being built,

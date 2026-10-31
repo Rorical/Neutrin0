@@ -6,6 +6,14 @@ finalized Chunk receipt is the History proof, so there is no separate History
 stage. CUDA does not change the Guest programs, proof format, recursive checks or
 chain identity. Proof verification and WASM execution stay on the host CPU.
 
+Ordinary full, archive and light-client nodes initialize a verification-only
+backend. Selecting a proving backend does not give those roles proving duties.
+Validators and reporters initialize the configured prover; reporters generate
+Evidence proofs and obtain missing Facts on demand. A non-light node with
+`prove_foreign_blocks = true` also initializes the prover, precomputes consensus
+Facts and runs fallback Chunk and Evidence jobs. That opt-in requires executing
+mode. Archive execution alone does not enable proving.
+
 ## Build and configure
 
 CPU is the default, including on macOS. CUDA execution requires Linux x86-64,
@@ -47,7 +55,7 @@ prioritize_block_proofs = true
 | `capacity` | 16 | Queued plus running Block jobs, including restart recovery; at least `concurrency`, at most 1024. |
 | `chunk_proof_fallback_secs` | 180 | How long a validator other than the next chunk's round-0 leader waits, from the persisted round start, before proving the chunk itself. At most 3600; zero disables the delay. |
 | `prioritize_block_proofs` | true | A chunk proof waits, for at most one slot after the certificate, while this node still has block proofs pending. |
-| `prove_foreign_blocks` | false | Prove candidates this node did not produce and publish their receipts. Requires `[execution] mode = "execute"`. |
+| `prove_foreign_blocks` | false | Prove candidates this node did not produce and publish their receipts. Requires `[execution] mode = "execute"`; also opts a non-validator into proactive Fact caching and fallback Chunk and Evidence proving. |
 | `rescue_unproven_blocks` | on for CUDA, off for CPU | Prove head-branch blocks whose proposer published no receipt once the proposer's lease has passed. |
 | `prover_address` | withdrawal credentials | Runtime account (twelve zero bytes, then the 20-byte address) every receipt this node proves names for its reward. |
 
