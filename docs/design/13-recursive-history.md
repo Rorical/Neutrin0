@@ -510,15 +510,13 @@ themselves and never import History proofs.
 Native and execution-only tests establish statement chaining but not receipt
 authenticity: SP1 execution mode skips deferred proof verification, so only real
 compressed proving shows that the Guest binds the ratified receipt. The ignored
-test `history_real_compressed_chunk_recursion` in
+integration tests in
 [`history_recursion.rs`](../../crates/runtime-host/tests/history_recursion.rs)
-proves consecutive compressed chunk receipts with real recursion, verifies the last
-as a History proof under an independent verifier, and checks that a missing,
-misattributed or duplicated ratified receipt cannot prove.
-`history_cuda_compressed_chunk_recursion` runs the same pipeline on CUDA
-(`--features cuda`, device from `NEUTRIN0_CUDA_DEVICE`). A result applies only
-to the Guest ELFs it ran on. The other real-proof tests are listed in the
-[roadmap](22-roadmap.md#open-verification-work).
+prove consecutive compressed chunk receipts with real recursion, verify the last
+as a History proof under an independent verifier, and check that a missing,
+misattributed or duplicated ratified receipt cannot prove. A result applies only
+to the Guest ELFs it ran on. Commands and hardware requirements are in
+[proving acceptance](../gpu-proving.md#gpu-tests).
 
 ## Scope
 

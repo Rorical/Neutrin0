@@ -1,11 +1,10 @@
 //! Statement-bound evidence → block → chunk composition and fail-closed execution.
 #[path = "support/acceptance.rs"]
 pub mod acceptance;
-#[path = "support/remote_backend.rs"]
-mod remote_backend;
 #[path = "../../prover-chunk/tests/support/mod.rs"]
 pub mod support;
 
+#[cfg(feature = "cuda")]
 use acceptance::{AcceptanceCache, StageIdentity};
 
 use neutrin0_consensus_types::evidence::commitment;
@@ -28,9 +27,9 @@ use neutrin0_prover_chunk::{
 };
 use neutrin0_runtime_abi::RuntimeBlockInput;
 use neutrin0_runtime_core::host::{LiveTrie, TracingState};
-use neutrin0_runtime_host::{
-    Sp1BlockProof, Sp1ProofSystem, proof_system::Sp1ChunkProof, wasm::WasmRuntime,
-};
+#[cfg(feature = "cuda")]
+use neutrin0_runtime_host::proof_system::Sp1ChunkProof;
+use neutrin0_runtime_host::{Sp1BlockProof, Sp1ProofSystem, wasm::WasmRuntime};
 use sp1_sdk::{
     SP1Stdin,
     blocking::{Prover, ProverClient},
@@ -460,15 +459,8 @@ fn evidence_guest_matches_native_statement_and_rejects_forgery() {
     assert!(!result.is_ok_and(|(_, report)| report.exit_code == 0));
 }
 
-/// History starts at a trusted, natively validated finalized boundary. The gate
-/// proves the new evidence and its monetary/consensus effects through real SP1.
-#[test]
-#[ignore = "expensive CPU evidence/block/chunk compressed proofs"]
-fn evidence_block_chunk_real_compressed_recursion() {
-    real_compressed_recursion(ProverClient::builder().cpu().build());
-}
-
-/// Uses the identical composition fixture, then verifies each stage locally.
+/// Proves evidence and its monetary/consensus effects from a trusted boundary,
+/// then verifies each stage locally.
 #[cfg(feature = "cuda")]
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires Linux x86-64 and an NVIDIA GPU; real compressed CUDA proving"]
@@ -483,10 +475,18 @@ async fn evidence_block_chunk_cuda_compressed_recursion() {
     .unwrap();
 }
 
-#[test]
-#[ignore = "real compressed Block receipt verdicts: acceptance by Evidence recursion, worst-case rejection in the Fact Guest"]
-fn receipt_verdicts_real_compressed() {
-    remote_backend::with_prover!(receipt_verdicts);
+#[cfg(feature = "cuda")]
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires NVIDIA CUDA: real Block receipt acceptance by Evidence recursion and worst-case rejection in the Fact Guest"]
+async fn receipt_verdicts_real_compressed() {
+    let device = std::env::var("NEUTRIN0_CUDA_DEVICE")
+        .map_or(Ok(0), |value| value.parse::<u32>())
+        .unwrap();
+    tokio::task::spawn_blocking(move || {
+        receipt_verdicts(neutrin0_runtime_host::backend::cuda_prover(device).unwrap());
+    })
+    .await
+    .unwrap();
 }
 
 /// One real Block receipt yields both evidence polarities. An execution
@@ -496,6 +496,7 @@ fn receipt_verdicts_real_compressed() {
 /// real proof with altered public values, which the verifier compares only
 /// after verifying the whole proof: the most work a rejection can cost.
 #[allow(clippy::too_many_lines)]
+#[cfg(feature = "cuda")]
 fn receipt_verdicts<P: neutrin0_runtime_host::ProgramProver>(prover: P) {
     use neutrin0_consensus_types::{BlockProof, ProofManifest, VoteAttestation};
     use neutrin0_prover_chunk::facts::{FactRequest, FactStatement, FactWitness, ProvenFact};
@@ -660,6 +661,7 @@ fn receipt_verdicts<P: neutrin0_runtime_host::ProgramProver>(prover: P) {
 }
 
 #[allow(clippy::too_many_lines)]
+#[cfg(feature = "cuda")]
 fn real_compressed_recursion(prover: impl neutrin0_runtime_host::ProgramProver) {
     let system = Sp1ProofSystem::new(prover).unwrap();
     // Independent local verification also checks CUDA-to-CPU interoperability.
@@ -750,7 +752,7 @@ fn real_compressed_recursion(prover: impl neutrin0_runtime_host::ProgramProver) 
     alternate.proof_bytes = neutrin0_prover_chunk::receipt_codec::encode(&bundle).unwrap();
     assert_eq!(alternate.statement_id(), attachments[0].statement_id());
     assert_ne!(alternate.proof_bytes, attachments[0].proof_bytes);
-    neutrin0_runtime_host::evidence::verify_input_receipts(&input, &[alternate]).unwrap();
+    assert!(neutrin0_runtime_host::evidence::verify_input_receipts(&input, &[alternate]).is_err());
     let dry = WasmRuntime::embedded()
         .unwrap()
         .dry_run(&input, live.trie(), &attachments)
@@ -771,14 +773,9 @@ fn real_compressed_recursion(prover: impl neutrin0_runtime_host::ProgramProver) 
         reporter_balance(&rewarded),
         alloy_primitives::U256::from(10)
     );
-    // The offender keeps an authenticated zero; the survivor's collateral is
-    // untouched.
+    // The tombstoned offender leaves the candidate set; the survivor's
+    // collateral is untouched.
     let mut candidates = neutrin0_consensus_types::runtime::ConsensusCandidates::default();
-    candidates.upsert(neutrin0_consensus_types::runtime::ConsensusCandidate {
-        address: support::credentials(8),
-        stake: 0,
-        identity: None,
-    });
     candidates.upsert(neutrin0_consensus_types::runtime::ConsensusCandidate {
         address: support::credentials(9),
         stake: 100,
@@ -822,7 +819,7 @@ fn real_compressed_recursion(prover: impl neutrin0_runtime_host::ProgramProver) 
         gas_limit: input.block_gas_limit,
         proposer_address: input.proposer_address,
         participation: input.participation,
-        proving: None,
+        proving: input.proving,
     };
     let mut state = live.trie().clone();
     let produced =
@@ -1015,6 +1012,7 @@ fn real_compressed_recursion(prover: impl neutrin0_runtime_host::ProgramProver) 
 
 /// Prove the first chunk's block and chunk, crediting the zero account, after
 /// re-signing its acceptance claims over the real block receipt.
+#[cfg(feature = "cuda")]
 fn prove_first_chunk<P, V>(
     system: &Sp1ProofSystem<P>,
     verifier: &Sp1ProofSystem<V>,
@@ -1082,6 +1080,7 @@ where
 }
 
 /// The real compressed receipt of `first`'s only block, as wire bytes.
+#[cfg(feature = "cuda")]
 fn prove_first_block<P, V>(
     system: &Sp1ProofSystem<P>,
     verifier: &Sp1ProofSystem<V>,

@@ -72,8 +72,14 @@ receipts it proves. Anything other than a runtime account is refused at startup.
 ## Scheduling and device sharing
 
 A shared priority gate orders Block and Chunk work first, then Fact, Evidence and
-program setup. Fact and Evidence batches carry a priority scope instead of a
-device lease: each compressed call releases the gate before the next, so queued
+program setup. Optional early Fact work also waits for the producer's whole
+Block proof queue to drain, including the handoff between native calls, before
+coalescing queued requests. This check precedes device admission; a Fact call
+already waiting at the device gate keeps its admission priority, and a running
+native call completes normally. Missing
+Fact receipts retain the existing in-circuit Chunk verification and on-demand
+Evidence proving paths. Fact and Evidence batches carry a priority scope instead
+of a device lease: each compressed call releases the gate before the next, so queued
 Block or Chunk work enters between fact groups. No GPU lease is held while waiting
 on the fact cache's single-flight lock. On CPU, Fact and Evidence composites take
 a fresh lease for each compressed call. Program installation takes capacity only
@@ -87,6 +93,13 @@ exact device reservation. Independent devices have independent gates; raising th
 worker count does not select another GPU. The registry admits at most 64 devices
 and 256 known SDK handles. Known factory handles keep their device through SDK
 `Arc` clones; foreign SDK or environment CUDA handles share the device-zero gate.
+
+These gates are local to one process. Each validator process starts its own SP1
+GPU server, using the socket for its selected device; separate processes do not
+share the queue or a memory budget. The hardware measurements below cover one
+CUDA prover process at a time. Reserve a 24 GiB device for one CUDA validator in
+an initial deployment. Running two CUDA validators on that device has not been
+validated and needs coordination beyond the current in-process gate.
 
 ## SP1 GPU server
 
@@ -120,9 +133,8 @@ cargo clippy --locked --all-targets -p neutrin0-node -p neutrin0-runtime-host --
 The ignored `evidence_block_chunk_cuda_compressed_recursion` test proves
 Fact → Evidence → Block → Chunk → Chunk recursion, checks the final receipt as a
 History proof from genesis and verifies every receipt with an independent local
-CPU verifier. It uses the same fixture and stage checkpoints as the CPU gate
-`evidence_block_chunk_real_compressed_recursion`. Use fresh directories for a
-first hardware run so cached CPU proofs cannot stand in for CUDA proving:
+CPU verifier. Real-proof acceptance uses CUDA for all proving stages.
+Use fresh checkpoint directories for a first hardware run:
 
 ```sh
 export NEUTRIN0_CUDA_DEVICE=0
@@ -134,10 +146,107 @@ cargo test --locked --release -p neutrin0-runtime-host --features cuda \
 ```
 
 Keep those directories to resume an interrupted run; use new ones to measure fresh
-proving latency. The ignored `history_recursion` gates
-(`history_real_compressed_chunk_recursion` on CPU,
-`history_cuda_compressed_chunk_recursion` on CUDA) prove consecutive chunk
-receipts with real recursion and reject off-chain ratified receipts.
+proving latency. `history_cuda_compressed_chunk_recursion` proves consecutive
+chunk receipts with real recursion and rejects off-chain ratified receipts.
+
+`consensus_guest_cuda_compressed_recursion` proves the two-Block → Chunk fixture
+and independently verifies the final Chunk receipt.
+`receipt_verdicts_real_compressed` tests both acceptance and rejection of real
+Block receipts through Fact and Evidence recursion. These gates and the two
+`prove_verify` real-proof cases require `--features cuda` and use
+`NEUTRIN0_CUDA_DEVICE` (default 0). CPU proving is excluded from acceptance;
+CPU execution, parity checks and independent receipt verification remain.
+
+```sh
+cargo test --locked --release -p neutrin0-runtime-host --features cuda \
+  --test consensus_chunk consensus_guest_cuda_compressed_recursion \
+  -- --ignored --exact --nocapture
+NEUTRIN0_HISTORY_GATE_DIR="$PWD/target/cuda-tests/history" \
+  cargo test --locked --release -p neutrin0-runtime-host --features cuda \
+  --test history_recursion history_cuda_compressed_chunk_recursion \
+  -- --ignored --exact --nocapture
+NEUTRIN0_EVIDENCE_GATE_DIR="$PWD/target/cuda-tests/receipt-verdicts" \
+  cargo test --locked --release -p neutrin0-runtime-host --features cuda \
+  --test evidence_pipeline receipt_verdicts_real_compressed \
+  -- --ignored --exact --nocapture
+```
 
 Plan for a high-memory host: CPU-side traces and recursion need well over 12 GiB
 of RAM. A result applies only to the Guest ELFs it ran on.
+
+## Validated hardware and results
+
+Validation used Linux x86-64, one NVIDIA RTX 4090 D with 24,564 MiB of device
+memory, 16 allocated CPUs and a 62 GiB host-memory limit.
+Rust 1.99.0 and SP1 6.10.0 were pinned. The locked workspace build passed.
+The ordinary workspace suite passed 1,746 tests with no failures. The CUDA
+node/runtime-host suite passed 460 tests with no failures. Strict workspace and CUDA Clippy, Rustdoc with warnings
+denied, format, monitoring rules and metric-exposition checks passed.
+
+All eight opt-in final-ELF execution/parity cases passed. PostgreSQL integration
+passed three cases, Solidity passed three tests, and the Forge/Cast HTTP wallet
+flow passed. The wallet fixture covers deployment, transfers, simulation and
+receipt queries with mock Block proofs and native consensus validation.
+An explicit validator-exit fixture also passed under its fixed committee and
+leader sequence, using mock Block proofs and native consensus validation.
+
+All six CUDA real-proof cases passed. The four recursive gates used independent
+CPU receipt verification:
+
+| Test | Verified result |
+| --- | --- |
+| `history_cuda_compressed_chunk_recursion` | Three Blocks and three recursively linked Chunks; false ratified receipts rejected |
+| `consensus_guest_cuda_compressed_recursion` | Two Block receipts recursively verified by a Chunk; forged public values and incorrect bindings rejected |
+| `evidence_block_chunk_cuda_compressed_recursion` | Objective misconduct, sanctions and reward settlement composed through Evidence → Block → Chunk; Fact coverage 15/15 |
+| `receipt_verdicts_real_compressed` | Both verdict polarities for real Block receipts; rejection fixture executed 828,737,469 Fact Guest instructions |
+| `real_prover_full_pipeline` | Signed EVM transfer proved as a compressed Block receipt and verified |
+| `real_prover_demonstration` | Signed EVM transfer proved and verified; altered public output rejected |
+
+A release-built single-validator network finalized Chunk 0 at height 1 and
+then Chunk 1 at height 2 with real compressed proofs. Its first History proof
+was exported successfully (1,275,157 bytes). The validator resumed its existing
+database, key and signing journals before finalizing. This run used one-block
+chunks and no peers.
+
+A separate release-built single-validator network finalized two consecutive
+64-block chunks at heights 64 and 128 with a 10-second slot interval. Its first
+History proof was exported successfully (1,275,157 bytes). The second chunk
+finalized after a host scheduling update and a restart on the same database and
+signing journals; all Guest and WASM fingerprints remained unchanged. These
+first two chunks had no peers or injected user transactions; they establish
+real 64-block composition and recursive finalization.
+
+The same network subsequently finalized eight EIP-1559 transactions at height
+256: funding two wallets, transfers in both directions, `WalletFixture`
+deployment, state updates from both wallets and a call that reverted as expected.
+Seven receipts succeeded and one reverted. Exact balances after gas charges,
+nonces, deployed bytecode, event identities and historical storage all matched.
+Block and receipt projections agreed on transaction order, cumulative and system
+gas, effective EIP-1559 fees and canonical inclusion. The creation address matched
+the sender and nonce. Read-only calls left state and nonces unchanged; a reverting
+simulation returned standard ABI revert data. The History proof covering all
+eight transactions was exported successfully (1,275,157 bytes).
+
+The Evidence pipeline resumed previously generated CUDA checkpoints and verified
+them again before completing the remaining stages. Device memory samples reached
+21,192 MiB (about 20.7 GiB). Sampling can miss shorter peaks. These fixture
+measurements do not establish throughput or memory bounds for full-gas blocks,
+128-block chunks or a sustained multi-host network.
+
+The tested GPU server required `libcudart.so.12`. An image with only CUDA 13 needed
+an additional CUDA 12 runtime library; the driver was unchanged. After one test
+exited, a stale device socket refused connections. Before retrying, the server
+was confirmed stopped and only the refused socket was removed. Never unlink a
+live server's socket.
+
+The SHA-256 fingerprints below identify the tested build artifacts. Chain
+specifications continue to use their protocol program identities. A changed
+artifact requires new proof results.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Block Guest | `1e0fc7976b12e9d4f11a76dee4d350808c9f156e4206a5db08d4e6167eccd037` |
+| Chunk Guest | `a41acc41ec54fd997ecc89b326ab44e9342b3a67e1678b25b8ae09eaa251eefd` |
+| Evidence Guest | `a7dc8c7c90767d123c37c183cc469d89c0cf97304f006cbc1e3e5412814083af` |
+| Fact Guest | `cfa996d304631d7f003fd4c6d24fb468419fbfb00a5aff283ef96b6616093f26` |
+| WASM runtime | `3e14d83234dfb985a8e65180e8c27725016e71c941df9e90f7672730d7fab5b7` |

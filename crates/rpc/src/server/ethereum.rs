@@ -71,7 +71,11 @@ pub(super) fn register(module: &mut RpcModule<RpcContext>) -> Result<(), RpcStar
     for &method in METHODS {
         module
             .register_async_method(method, move |params, ctx, extensions| async move {
-                let args = params.parse::<Vec<Value>>().map_err(invalid_params)?;
+                // Wallet clients omit parameters or send null for zero-argument calls.
+                let args = params
+                    .parse::<Option<Vec<Value>>>()
+                    .map_err(invalid_params)?
+                    .unwrap_or_default();
                 let client = extensions.get::<ClientIp>().copied();
                 tokio::time::timeout(
                     ctx.runtime_call_timeout,

@@ -40,6 +40,39 @@ async fn call_named(
     )
 }
 
+#[tokio::test]
+async fn ethereum_zero_argument_methods_accept_omitted_null_and_empty_params() {
+    let module = build_module(Arc::new(MockBackend::default())).unwrap();
+    for params in [None, Some(Value::Null), Some(json!([]))] {
+        let mut request = json!({"jsonrpc": "2.0", "id": 1, "method": "eth_chainId"});
+        if let Some(params) = params {
+            request["params"] = params;
+        }
+        let (response, _) = module
+            .raw_json_request(&request.to_string(), 1)
+            .await
+            .unwrap();
+        let response: Value = serde_json::from_str(response.get()).unwrap();
+        assert_eq!(response["result"], "0x7", "{response}");
+        assert!(response.get("error").is_none());
+    }
+}
+
+#[tokio::test]
+async fn ethereum_empty_params_still_enforce_argument_shapes_and_counts() {
+    let module = build_module(Arc::new(MockBackend::default())).unwrap();
+    for params in [json!([null]), json!({})] {
+        let error = call_named(&module, "eth_chainId", params)
+            .await
+            .expect_err("no arguments accepted");
+        assert_eq!(error["code"], -32602);
+    }
+    let error = call_named(&module, "eth_getBalance", Value::Null)
+        .await
+        .expect_err("an address is required");
+    assert_eq!(error["code"], -32602);
+}
+
 struct MockBackend {
     chain_id: ChainId,
     head_hash: BlockHash,

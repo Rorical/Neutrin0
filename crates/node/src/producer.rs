@@ -138,6 +138,7 @@ pub(crate) async fn run_block_producer<P: ProgramProver + 'static>(
         }) {
             jobs.push(hash, hash);
         }
+        backend.set_block_proof_backlog(jobs.pending() + jobs.running());
         let worker = Arc::clone(&backend);
         jobs.start(move |hash| worker.prove_block(&hash));
         let metrics = backend.metrics();
@@ -269,6 +270,9 @@ async fn attempt_slot<P: ProgramProver + 'static>(
     let proposer = proposer.clone();
     match tokio::task::spawn_blocking(move || worker.try_produce_block(slot, &proposer)).await {
         Ok(Ok(Some(outcome))) => {
+            // Reserve foreground demand before the header wakes early facts;
+            // the producer queues this candidate's proof on its next pass.
+            backend.set_block_proof_backlog(1);
             backend.queue_header_facts(&outcome.block.header);
             // The candidate is published as soon as it is executed (design
             // 08); its receipt follows when the proof completes.

@@ -155,12 +155,17 @@ fn master_apply_block_with_witness_matches_dry_run() {
     assert_eq!(out, dry.output);
 }
 
-/// Opt-in real Compressed STARK pipeline. The prover is selected
-/// by `SP1_PROVER` (`cpu`, `network`, …); run with `--ignored`.
+/// Opt-in real Compressed STARK pipeline on the local NVIDIA GPU.
+#[cfg(feature = "cuda")]
 #[test]
-#[ignore = "runs real Compressed STARK proving (multi-minute on CPU)"]
+#[ignore = "requires Linux x86-64 NVIDIA CUDA proving hardware"]
 fn real_prover_full_pipeline() {
-    let prover = ProverClient::from_env();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let _entered = runtime.enter();
+    let device = std::env::var("NEUTRIN0_CUDA_DEVICE")
+        .map_or(Ok(0), |value| value.parse::<u32>())
+        .unwrap();
+    let prover = neutrin0_runtime_host::backend::cuda_prover(device).unwrap();
     let ctx = ProverCtx::new(prover).unwrap();
 
     let (live, input) = genesis_and_block(vec![support::transfer(0)]);
@@ -172,21 +177,18 @@ fn real_prover_full_pipeline() {
 }
 
 /// Opt-in demonstration: print every artifact of one full block
-/// transition under the real env-driven Compressed STARK prover.
+/// transition under the local CUDA Compressed STARK prover.
 ///
 /// Run with:
-/// `SP1_PROVER=cpu cargo test -p neutrin0-runtime-host --test prove_verify \
-///    real_prover_demonstration -- --ignored --nocapture --test-threads=1`
-///
-/// Set `SP1_PROVER=network` (with a Succinct prover key configured)
-/// to offload generation to the prover network instead of the local
-/// CPU. `SP1_PROVER=mock` short-circuits proving for sanity checks.
+/// `cargo test --locked --release -p neutrin0-runtime-host --features cuda \
+///    --test prove_verify real_prover_demonstration -- --ignored --nocapture`
 ///
 /// Saves the bincode-encoded `SP1ProofWithPublicValues` to
 /// `neutrin0_block_proof.bin` in the system temporary directory so the wire
 /// artifact can be inspected directly.
+#[cfg(feature = "cuda")]
 #[test]
-#[ignore = "runs real Compressed STARK proving (multi-minute on CPU)"]
+#[ignore = "requires Linux x86-64 NVIDIA CUDA proving hardware"]
 #[allow(clippy::too_many_lines)] // demonstration test, intentionally linear
 fn real_prover_demonstration() {
     use std::fmt::Write as _;
@@ -206,7 +208,7 @@ fn real_prover_demonstration() {
 
     println!();
     println!("=== Neutrin0 block proof demonstration ============================");
-    println!("    real Compressed STARK prover (env-selected), one signed EVM transfer");
+    println!("    real Compressed STARK prover (CUDA), one signed EVM transfer");
     println!();
 
     // -------------------------------------------------------------
@@ -282,7 +284,12 @@ fn real_prover_demonstration() {
     // -------------------------------------------------------------
     println!("[4] SP1 prover setup (program ROM preprocessing)");
     let started = Instant::now();
-    let prover = ProverClient::from_env();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let _entered = runtime.enter();
+    let device = std::env::var("NEUTRIN0_CUDA_DEVICE")
+        .map_or(Ok(0), |value| value.parse::<u32>())
+        .unwrap();
+    let prover = neutrin0_runtime_host::backend::cuda_prover(device).unwrap();
     let ctx = ProverCtx::new(prover).unwrap();
     let elapsed = started.elapsed();
     println!("    elapsed                 {elapsed:.2?}");
@@ -299,7 +306,7 @@ fn real_prover_demonstration() {
     // -------------------------------------------------------------
     // 5. Compressed STARK proof generation
     // -------------------------------------------------------------
-    println!("[5] SP1 Compressed STARK proof generation (env-selected backend)");
+    println!("[5] SP1 Compressed STARK proof generation (CUDA backend)");
     let started = Instant::now();
     let proof_bundle = ctx
         .prove(&input, dry.witness.clone(), &[], PROVER_ADDRESS)

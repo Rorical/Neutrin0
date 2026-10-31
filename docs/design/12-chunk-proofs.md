@@ -267,8 +267,8 @@ and [its security conditions](https://ethresear.ch/t/security-of-bls-batch-verif
 ## Real-proof verification
 
 Native tests cover adversarial boundaries, signatures and quorums, proof keys,
-rotation and accountability. Real compressed composition is a separate gate for
-each set of programs: the ignored test `consensus_guest_real_compressed_recursion`
-in `crates/runtime-host/tests/consensus_chunk.rs` proves blocks and a Chunk with
-the CPU prover, and the evidence-to-chunk path is covered in
-[evidence proofs](16-evidence-proofs.md).
+rotation and accountability. The ignored integration tests in
+`crates/runtime-host/tests/consensus_chunk.rs` prove Block receipts and a Chunk
+with real compressed recursion. The evidence-to-chunk path is covered in
+[evidence proofs](16-evidence-proofs.md). Commands and hardware requirements are
+in [proving acceptance](../gpu-proving.md#gpu-tests).

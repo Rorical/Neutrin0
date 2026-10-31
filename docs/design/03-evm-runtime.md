@@ -185,6 +185,9 @@ execution artifacts, decoded by the runtime installed at the selected block.
 Native block hashes appear consistently in RPC and `BLOCKHASH`; transaction
 hashes are Keccak.
 
+Zero-argument methods accept omitted `params`, `null` and `[]`. Methods validate
+positional parameter shapes and argument counts.
+
 Block tags follow Ethereum: `latest` is the executed candidate head, `safe` the
 proven head, whose blocks since finality all have verified receipts,
 `finalized` the chunk-finalized boundary, and `pending` a simulated next block.

@@ -155,8 +155,8 @@ gas ceiling alone does not establish that for Osaka's software precompiles.
 ## Verifying real composition
 
 Workspace tests run native and Guest execution and mock recursion. Real
-compressed composition is a separate gate, run by the ignored tests in
-`crates/runtime-host/tests`: `evidence_block_chunk_real_compressed_recursion`
-(EvidenceProof to block to chunk), `history_real_compressed_chunk_recursion`
-(chunk to chunk) and their CUDA variants. A result holds only for the ELFs it
-ran; any Guest change requires running them again.
+compressed composition is a separate gate, covered by the ignored integration
+tests in `crates/runtime-host/tests`: EvidenceProof to Block to Chunk, and
+Chunk to Chunk. A result holds only for the ELFs it ran; any Guest change
+requires running them again. Commands and hardware requirements are in
+[proving acceptance](../gpu-proving.md#gpu-tests).

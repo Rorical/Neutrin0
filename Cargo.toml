@@ -134,7 +134,7 @@ bincode             = { version = "2.0.1", default-features = false, features = 
 # WASM execution engine for the dynamic runtime host. `cranelift`
 # default feature is heavy; we keep it on because we need the JIT/AOT
 # compiler to execute master.wasm.
-wasmtime            = { version = "49.0.2", default-features = false, features = ["cranelift", "runtime"] }
+wasmtime            = { version = "49.0.5", default-features = false, features = ["cranelift", "runtime"] }
 
 # no_std allocator for the `wasm32-unknown-unknown` builds of master.
 dlmalloc            = { version = "0.2.14", default-features = false }

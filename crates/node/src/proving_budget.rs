@@ -109,6 +109,7 @@ pub(crate) struct ProvingBudget {
     metrics: Arc<NodeMetrics>,
     device: Option<Arc<SubmissionGate>>,
     native_admission: bool,
+    block_backlog: tokio::sync::watch::Sender<bool>,
 }
 
 impl ProvingBudget {
@@ -156,7 +157,23 @@ impl ProvingBudget {
             metrics,
             device: gate,
             native_admission,
+            block_backlog: tokio::sync::watch::channel(false).0,
         }
+    }
+
+    /// Keep optional precomputation behind the whole producer queue, including
+    /// the gap between one native call returning and the next job launching.
+    pub(crate) fn set_block_backlog(&self, jobs: usize) {
+        self.block_backlog.send_replace(jobs != 0);
+    }
+
+    /// Wait without holding a proving permit or blocking an executor thread.
+    pub(crate) async fn wait_for_block_proofs(&self) {
+        self.block_backlog
+            .subscribe()
+            .wait_for(|busy| !*busy)
+            .await
+            .expect("proving budget retains its backlog sender");
     }
 
     /// Adjust admission capacity without interrupting already running proofs.

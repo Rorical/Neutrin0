@@ -27,6 +27,9 @@ async fn run_fact_worker<P: ProofSystem + Send + Sync + 'static>(
         Some(job) => Some(job),
         None => rx.recv().await,
     } {
+        // Coalesce after the foreground queue drains, so waiting work joins
+        // one batch instead of taking the device between every pair of blocks.
+        budget.wait_for_block_proofs().await;
         let FactJob {
             program,
             mut requests,
