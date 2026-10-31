@@ -165,6 +165,16 @@ All eight reached real-proof finality. Balance and gas accounting, nonces,
 bytecode, event logs, historical state queries and block/receipt consistency
 checks passed.
 
+Further real-network application tests finalized 52 additional transactions,
+including OpenZeppelin ERC-20/ERC-721 behavior, contract rollback and storage
+semantics, ethers/viem interoperability, ERC-2612 permits and all 18 Osaka
+precompiles. Expected reverts, exact fee accounting, canonical projections and
+historical state checks passed. The application and wallet groups finalized at
+height 832, the precompile group at height 896 and a zero-amount transfer with
+WebSocket and polling-filter checks at height 960. Each group exported its
+covering History proof. These functional results and their scope are recorded in
+[GPU proving](../gpu-proving.md#validated-hardware-and-results).
+
 ## Open verification work
 
 A real-proof result applies only to the Guest ELFs it ran on, and any change to a

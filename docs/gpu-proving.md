@@ -235,6 +235,29 @@ the sender and nonce. Read-only calls left state and nonces unchanged; a reverti
 simulation returned standard ABI revert data. The History proof covering all
 eight transactions was exported successfully (1,275,157 bytes).
 
+Further application tests on the same network finalized 52 additional EIP-1559
+transactions: 43 succeeded and nine reverted as expected. Contracts used
+OpenZeppelin Contracts 5.4.0 and Solidity 0.8.30. The following functional checks
+passed against proof-finalized state:
+
+| Application surface | Verified result |
+| --- | --- |
+| ERC-20 and ERC-721 | Transfers, finite and unlimited allowances, approvals, safe receiver callbacks, ownership and rejection rollback |
+| Contract execution | Atomic batch rollback, caught inner reverts, custom errors, delegatecall storage separation, dynamic storage, transient reentrancy protection and reset, CREATE2 prediction and collision, out-of-gas rollback |
+| Transaction admission | Wrong-chain and malformed envelopes rejected; replay left balances and nonces unchanged; eight transfers from two nonce streams included in one block |
+| Wallet clients | ethers 6.15.0 and viem 2.38.6 deployment, simulation, gas estimation and transfers; matching EIP-712 digests, ERC-2612 permit, replay and wrong-domain rejection |
+| Osaka precompiles | All 18 outputs matched an independent Anvil Osaka reference and were committed by transactions; malformed KZG, invalid BLS encodings and non-subgroup MSM inputs rejected |
+| System views | Consensus context, bounded randomness access, staking and governance ABI reads matched pinned historical state |
+| Accounting and queries | Exact native fees, balances and nonces; canonical receipt/block projections, historical EIP-1898 state and indexed event filters |
+| Wallet and explorer RPC | Exact `feeHistory` base fees, gas ratios and gas-weighted rewards; indexed transaction lookup, pending simulation without mutation, filter logs and malformed-selector rejection |
+| Live events | `newHeads` and filtered ERC-20 log subscriptions matched a real zero-amount transfer; block/log filters, unsubscribe and uninstall passed |
+
+The application and wallet-client groups finalized at height 832; the precompile
+group finalized at height 896. The subscription transfer finalized at height
+960. Each group exported the History proof covering its transactions. These
+functional acceptance results cover the tested calls and transactions. Sustained
+RPC availability and maximum throughput require separate acceptance.
+
 The Evidence pipeline resumed previously generated CUDA checkpoints and verified
 them again before completing the remaining stages. Device memory samples reached
 21,192 MiB (about 20.7 GiB). Sampling can miss shorter peaks. These fixture
