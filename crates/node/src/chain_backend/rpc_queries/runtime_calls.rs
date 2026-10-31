@@ -14,6 +14,7 @@ use neutrin0_runtime_abi::{
 use neutrin0_storage::Database;
 use neutrin0_trie::Trie;
 
+use super::super::pool_validation;
 use super::{ChainBackend, reads::read_state, storage_error};
 
 /// The selected state, the runtime that interprets it, the authenticated
@@ -127,26 +128,22 @@ where
         if self.is_light() {
             return Err(QueryError::StateUnavailable);
         }
-        let engine = Arc::clone(&self.engine);
         let at = at.clone();
-        tokio::task::spawn_blocking(move || {
-            let engine = engine.lock().expect("engine mutex poisoned");
-            let (state, height) = read_state(&engine, &at)?;
+        self.rpc_engine(move |engine| {
+            let (state, height) = read_state(engine, &at)?;
             let runtime = engine
                 .runtime_code_hash_for(height)
                 .map_err(|_| QueryError::StateUnavailable)?;
-            drop(engine);
             Ok((state, runtime))
         })
         .await
-        .map_err(storage_error)?
     }
 
     /// The authenticated next-block input over the head state, or the head
     /// state alone when the next chunk's context is not finalized here.
     fn next_block_input(
-        &self,
         engine: &Engine<DB>,
+        head_state: &pool_validation::HeadState,
         body: &Body,
     ) -> Result<(Arc<Trie>, Hash, Option<RuntimeBlockInput>), RuntimeCallError> {
         let height = engine
@@ -158,7 +155,11 @@ where
             let runtime = engine
                 .runtime_code_hash_for(engine.head_height())
                 .map_err(storage_error)?;
-            return Ok((self.head_state_snapshot(engine), runtime, None));
+            return Ok((
+                pool_validation::head_state_snapshot(head_state, engine),
+                runtime,
+                None,
+            ));
         }
         let parent = engine
             .store()
@@ -213,42 +214,46 @@ where
                 .map_err(|error| RuntimeCallError::Decode(error.to_string()))?,
         };
         Ok((
-            self.head_state_snapshot(engine),
+            pool_validation::head_state_snapshot(head_state, engine),
             finalized.programs.runtime_code_hash,
             Some(block),
         ))
     }
 
-    fn pending_call_inputs(&self) -> Result<PendingInputs, RuntimeCallError> {
-        // Freeze the canonical head and the last validated pool together;
-        // release the publication fence before executing the disposable
-        // query, which skips any entry the head no longer admits.
-        let _update = self
-            .head_updates
-            .lock()
-            .expect("ChainBackend head update poisoned");
-        let candidates = self
-            .mempool
-            .lock()
-            .expect("ChainBackend mempool poisoned")
-            .execution_candidates(super::super::DEFAULT_BODY_TX_BUDGET_BYTES)
-            .into_iter()
-            .map(|entry| entry.bytes)
-            .collect::<Vec<_>>();
-        let head_local = self.with_engine(|engine| {
-            engine
+    async fn pending_call_inputs(
+        &self,
+        executor: Arc<dyn ErasedBlockExecutor>,
+    ) -> Result<PendingInputs, RuntimeCallError> {
+        let updates = Arc::clone(&self.head_updates);
+        let mempool = Arc::clone(&self.mempool);
+        let engine = Arc::clone(&self.engine);
+        let head_state = Arc::clone(&self.head_state);
+        self.rpc_blocking(move || {
+            // Freeze the head and validated pool together; no async worker
+            // waits for the publication fence or performs evidence queries.
+            let _update = updates.lock().expect("ChainBackend head update poisoned");
+            let candidates = mempool
+                .lock()
+                .expect("ChainBackend mempool poisoned")
+                .execution_candidates(super::super::DEFAULT_BODY_TX_BUDGET_BYTES)
+                .into_iter()
+                .map(|entry| entry.bytes)
+                .collect::<Vec<_>>();
+            let engine = engine.lock().expect("ChainBackend mutex poisoned");
+            let head_local = engine
                 .head_height()
                 .checked_div(engine.chain_spec().consensus.chunk_size)
-                .is_none_or(|chunk| engine.execution_boundary(chunk).is_err())
-        });
-        let body = if head_local {
-            Body::default()
-        } else {
-            self.select_evidence_body(&candidates).0
-        };
-        let (state, runtime, block) =
-            self.with_engine(|engine| self.next_block_input(engine, &body))?;
-        Ok((state, runtime, block, candidates))
+                .is_none_or(|chunk| engine.execution_boundary(chunk).is_err());
+            let body = if head_local {
+                Body::default()
+            } else {
+                super::super::evidence::selected_body(&engine, executor.as_ref(), &candidates).0
+            };
+            let (state, runtime, block) = Self::next_block_input(&engine, &head_state, &body)?;
+            drop(engine);
+            Ok((state, runtime, block, candidates))
+        })
+        .await
     }
 
     /// One selected-state snapshot chooses authenticated next-block or
@@ -261,7 +266,8 @@ where
         let executor = self
             .block_executor_snapshot()
             .ok_or(RuntimeCallError::RuntimeNotConfigured)?;
-        let (state, runtime, block, candidates) = self.pending_call_inputs()?;
+        let (state, runtime, block, candidates) =
+            self.pending_call_inputs(Arc::clone(&executor)).await?;
         let response = self
             .run_query(move || -> Result<_, RuntimeCallError> {
                 let (mode, block) = if let Some(block) = block {
@@ -299,16 +305,18 @@ where
         let executor = self
             .block_executor_snapshot()
             .ok_or(RuntimeCallError::RuntimeNotConfigured)?;
-        let runtime = self.with_engine(|engine| {
-            let header = engine
-                .store()
-                .get_header(&block)
-                .map_err(storage_error)?
-                .ok_or(QueryError::BlockNotFound)?;
-            engine
-                .runtime_code_hash_for(header.height)
-                .map_err(storage_error)
-        })?;
+        let runtime = self
+            .rpc_engine(move |engine| {
+                let header = engine
+                    .store()
+                    .get_header(&block)
+                    .map_err(storage_error)?
+                    .ok_or(QueryError::BlockNotFound)?;
+                engine
+                    .runtime_code_hash_for(header.height)
+                    .map_err(storage_error)
+            })
+            .await?;
         let request = QueryRequest { method, args };
         let response = self
             .run_query(move || executor.query(&request, runtime, &Trie::default()))
@@ -329,17 +337,25 @@ where
         let executor = self
             .block_executor_snapshot()
             .ok_or(RuntimeCallError::RuntimeNotConfigured)?;
-        let (state, runtime) = self.with_engine(|engine| {
-            let runtime = engine
-                .head_height()
-                .checked_add(1)
-                .and_then(|height| engine.runtime_code_hash_for(height).ok())
-                .or_else(|| engine.runtime_code_hash_for(engine.head_height()).ok())
-                .ok_or_else(|| {
-                    RuntimeCallError::Runtime("transaction admission runtime unavailable".into())
-                })?;
-            Ok::<_, RuntimeCallError>((self.head_state_snapshot(engine), runtime))
-        })?;
+        let head_state = Arc::clone(&self.head_state);
+        let (state, runtime) = self
+            .rpc_engine(move |engine| {
+                let runtime = engine
+                    .head_height()
+                    .checked_add(1)
+                    .and_then(|height| engine.runtime_code_hash_for(height).ok())
+                    .or_else(|| engine.runtime_code_hash_for(engine.head_height()).ok())
+                    .ok_or_else(|| {
+                        RuntimeCallError::Runtime(
+                            "transaction admission runtime unavailable".into(),
+                        )
+                    })?;
+                Ok::<_, RuntimeCallError>((
+                    pool_validation::head_state_snapshot(&head_state, engine),
+                    runtime,
+                ))
+            })
+            .await?;
         let request = QueryRequest { method, args };
         let response = self
             .run_query(move || executor.query(&request, runtime, &state))

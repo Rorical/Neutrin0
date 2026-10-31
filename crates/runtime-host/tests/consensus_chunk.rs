@@ -1,4 +1,4 @@
-//! Stronger consensus guest integration. The CPU test is an explicit proving gate.
+//! Consensus Guest integration with an explicit CUDA proving gate.
 #[path = "../../prover-chunk/tests/support/mod.rs"]
 pub mod support;
 
@@ -316,6 +316,18 @@ fn pipeline<P: neutrin0_runtime_host::ProgramProver>(prover: P, real: bool) {
             },
         )
         .unwrap();
+    if real {
+        let verifier = Sp1ProofSystem::new(ProverClient::builder().light().build()).unwrap();
+        verifier
+            .verify_consensus_chunk(
+                &proof,
+                &neutrin0_consensus_types::history_proof::ChunkReceiptStatement {
+                    statement: expected.clone(),
+                    chunk_prover_address: [0; 32],
+                },
+            )
+            .unwrap();
+    }
     // The cached verdict answers again, and binds only that statement.
     system
         .verify_consensus_chunk(
@@ -474,9 +486,10 @@ fn check_rejection_classifier<P: neutrin0_runtime_host::ProgramProver>(
     // The compact summary is part of the exact authenticated public values,
     // even though it is not copied into the wire BlockProofPublicInputs.
     let mut forged_summary = proof.to_sp1().unwrap();
-    let mut output = block.output.clone();
-    output.transaction_summary.transaction_count ^= 1;
-    forged_summary.public_values = sp1_sdk::SP1PublicValues::from(&borsh::to_vec(&output).unwrap());
+    let mut statement = block.statement();
+    statement.output.transaction_summary.transaction_count ^= 1;
+    forged_summary.public_values =
+        sp1_sdk::SP1PublicValues::from(&borsh::to_vec(&statement).unwrap());
     let mut forged_envelope = envelope.clone();
     forged_envelope.proof_bytes = borsh::to_vec(
         &neutrin0_runtime_host::proof_system::Sp1BlockProof::from_sp1(&forged_summary).unwrap(),
@@ -495,9 +508,9 @@ fn check_rejection_classifier<P: neutrin0_runtime_host::ProgramProver>(
     // Make the envelope and decoded public output agree again, while retaining
     // the original cryptographic proof. Only proof verification catches this.
     let mut bundle = proof.to_sp1().unwrap();
-    let mut output = block.output.clone();
-    output.post_state_root = bad.public_inputs.state_root_after;
-    bundle.public_values = sp1_sdk::SP1PublicValues::from(&borsh::to_vec(&output).unwrap());
+    let mut statement = block.statement();
+    statement.output.post_state_root = bad.public_inputs.state_root_after;
+    bundle.public_values = sp1_sdk::SP1PublicValues::from(&borsh::to_vec(&statement).unwrap());
     bad.proof_bytes = borsh::to_vec(
         &neutrin0_runtime_host::proof_system::Sp1BlockProof::from_sp1(&bundle).unwrap(),
     )
@@ -513,11 +526,21 @@ fn consensus_guest_execution_and_public_bindings_mock() {
     pipeline(ProverClient::builder().mock().build(), false);
 }
 
-#[test]
-#[ignore = "expensive real CPU compressed block and consensus chunk proving"]
-fn consensus_guest_real_compressed_recursion() {
-    sp1_sdk::utils::setup_logger();
-    pipeline(ProverClient::builder().cpu().build(), true);
+#[cfg(feature = "cuda")]
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires Linux x86-64 and an NVIDIA GPU; real compressed CUDA proving"]
+async fn consensus_guest_cuda_compressed_recursion() {
+    let device = std::env::var("NEUTRIN0_CUDA_DEVICE")
+        .map_or(Ok(0), |value| value.parse::<u32>())
+        .unwrap();
+    tokio::task::spawn_blocking(move || {
+        pipeline(
+            neutrin0_runtime_host::backend::cuda_prover(device).unwrap(),
+            true,
+        );
+    })
+    .await
+    .unwrap();
 }
 
 #[test]

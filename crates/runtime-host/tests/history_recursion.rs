@@ -11,22 +11,27 @@ pub mod acceptance;
 #[path = "../../prover-chunk/tests/support/mod.rs"]
 pub mod support;
 
+#[cfg(feature = "cuda")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use neutrin0_consensus_types::history_proof::{
     ChunkReceiptStatement, ConsensusBoundary, HistoryProof,
 };
 use neutrin0_primitives::BoundedBytes;
-use neutrin0_proof_system::{ProofError, ProofSystem, verify_history_proof};
+#[cfg(feature = "cuda")]
+use neutrin0_proof_system::verify_history_proof;
+use neutrin0_proof_system::{ProofError, ProofSystem};
 use neutrin0_prover_chunk::consensus::{
     ConsensusWitness, as_chunk, validate_candidate, validate_consensus,
     validate_consensus_with_context,
 };
 use neutrin0_runtime_core::host::{LiveTrie, TracingState};
-use neutrin0_runtime_host::{
-    ProgramProver, Sp1BlockProof, Sp1ProofSystem, proof_system::Sp1ChunkProof,
-};
+#[cfg(feature = "cuda")]
+use neutrin0_runtime_host::{ProgramProver, Sp1BlockProof};
+use neutrin0_runtime_host::{Sp1ProofSystem, proof_system::Sp1ChunkProof};
+#[cfg(feature = "cuda")]
+use sp1_sdk::{ProvingKey, SP1Proof};
 use sp1_sdk::{
-    ProvingKey, SP1Proof, SP1Stdin,
+    SP1Stdin,
     blocking::{ProveRequest, Prover, ProverClient},
 };
 
@@ -393,6 +398,7 @@ fn empty_successor(
     (next, input, execution_witness, post_live)
 }
 
+#[cfg(feature = "cuda")]
 fn cached_stage<T: BorshDeserialize + BorshSerialize>(
     cache: &acceptance::AcceptanceCache,
     identity: &acceptance::StageIdentity,
@@ -413,6 +419,7 @@ fn cached_stage<T: BorshDeserialize + BorshSerialize>(
 }
 
 #[allow(clippy::too_many_lines)]
+#[cfg(feature = "cuda")]
 fn real_pipeline<P: ProgramProver>(prover: P) {
     let challenge_prover = prover.clone();
     let system = Sp1ProofSystem::new(prover).unwrap();
@@ -543,6 +550,7 @@ fn real_pipeline<P: ProgramProver>(prover: P) {
 /// Only real compression authenticates the ratified receipt a chunk verifies,
 /// and every later History proof rests on it: a missing receipt, another
 /// program's receipt in its place or a duplicated one must not prove.
+#[cfg(feature = "cuda")]
 fn reject_false_ratified_receipts<P: ProgramProver>(
     prover: &P,
     witness: &ConsensusWitness,
@@ -592,12 +600,6 @@ fn reject_false_ratified_receipts<P: ProgramProver>(
             "compressed recursion accepted a missing, misattributed or extra ratified receipt ({attack})"
         );
     }
-}
-
-#[test]
-#[ignore = "real compressed Block/Chunk recursion requires a suitable prover"]
-fn history_real_compressed_chunk_recursion() {
-    real_pipeline(ProverClient::builder().cpu().build());
 }
 
 #[cfg(feature = "cuda")]

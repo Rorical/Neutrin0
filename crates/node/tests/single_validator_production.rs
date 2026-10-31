@@ -18,9 +18,8 @@
 //! 5. A second block extends the chain monotonically and carries
 //!    its own (identical, for an empty body) validator-set root.
 //!
-//! Mock proving is used to keep the test under CI timeouts; a real
-//! `CpuProver` proof of the same witness is exercised by the
-//! `neutrin0-runtime-host` `tests/sp1_proof_system.rs` suite.
+//! Mock proving keeps the test within CI timeouts. Real compressed proving is
+//! covered by the CUDA gates in `neutrin0-runtime-host`.
 
 #[path = "support/evm.rs"]
 pub mod evm;

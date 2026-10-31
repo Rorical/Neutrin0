@@ -185,6 +185,9 @@ execution artifacts, decoded by the runtime installed at the selected block.
 Native block hashes appear consistently in RPC and `BLOCKHASH`; transaction
 hashes are Keccak.
 
+Zero-argument methods accept omitted `params`, `null` and `[]`. Methods validate
+positional parameter shapes and argument counts.
+
 Block tags follow Ethereum: `latest` is the executed candidate head, `safe` the
 proven head, whose blocks since finality all have verified receipts,
 `finalized` the chunk-finalized boundary, and `pending` a simulated next block.
@@ -212,6 +215,12 @@ state across all allowance trials in one runtime query.
 
 Block reads check the header under the engine lock and read and verify the
 body outside it, so RPC traffic never holds the engine while it hashes bodies.
+Synchronous database reads, state snapshots, pending preparation and WASM queries
+run on a bounded blocking pool. A request timeout cancels the wait; running work
+keeps its concurrency slot until it exits. Block rendering projects artifacts
+once per response. Subscription polling includes header rendering in its deadline
+and advances its cursor only after the whole poll renders successfully; a poll
+timeout retries from the same anchor.
 Simulations run under the node's query fuel, memory and slot limits and the RPC
 request and time limits ([runtime interface](02-runtime-interface.md#historical-queries)).
 

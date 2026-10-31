@@ -11,8 +11,12 @@ mod evidence_report_races;
 mod finalized_metrics;
 #[path = "support/native_executor.rs"]
 pub mod native_executor;
+#[path = "complete_chunk/proving_duties.rs"]
+mod proving_duties;
 #[path = "complete_chunk/reporter_mode.rs"]
 mod reporter_mode;
+#[path = "complete_chunk/rpc_isolation.rs"]
+mod rpc_isolation;
 #[path = "../../prover-chunk/tests/support/mod.rs"]
 pub mod support;
 
@@ -426,10 +430,40 @@ async fn proof_job_keeps_network_responsive_and_retries_without_advancing_on_fai
 
 #[tokio::test(flavor = "current_thread")]
 async fn evidence_worker_persists_gossips_and_rehydrates_verified_receipts() {
+    for foreign_prover in [false, true] {
+        Box::pin(evidence_worker_case(foreign_prover)).await;
+    }
+}
+
+fn double_precommit(
+    domain: neutrin0_primitives::ConsensusDomain,
+) -> neutrin0_consensus_types::SlashingEvidence {
     use neutrin0_consensus_types::{
         FinalityVoteData, FinalityVotePhase, IndexedVote, SlashingEvidence,
-        evidence::EvidenceReport,
     };
+    let key = neutrin0_crypto::bls::SecretKey::key_gen(&[42; 32], &[]).unwrap();
+    let sign = |hash| {
+        let data = FinalityVoteData {
+            chunk_id: 0,
+            round: 2,
+            chunk_hash: [hash; 32],
+            selection: [0; 32],
+            phase: FinalityVotePhase::Precommit,
+        };
+        IndexedVote {
+            signature: key.sign(&data.signing_message(domain)).to_bytes(),
+            data,
+        }
+    };
+    SlashingEvidence::DoublePrecommit {
+        validator_index: 0,
+        vote_a: sign(1),
+        vote_b: sign(2),
+    }
+}
+
+async fn evidence_worker_case(foreign_prover: bool) {
+    use neutrin0_consensus_types::evidence::EvidenceReport;
     use neutrin0_network::{Topic, service::NetworkCommand};
     use neutrin0_sync::SyncBackend;
     let (mut engine, witness) = engine();
@@ -445,32 +479,28 @@ async fn evidence_worker_persists_gossips_and_rehydrates_verified_receipts() {
     };
     let voter = ProposerKey::from_ikm(&[42; 32], 0).unwrap();
     engine.finalize_chunk(0, &prover, &voter).unwrap();
-    let key = neutrin0_crypto::bls::SecretKey::key_gen(&[42; 32], &[]).unwrap();
-    let domain = engine.chain_spec().consensus_domain();
-    let sign = |hash| {
-        let data = FinalityVoteData {
-            chunk_id: 0,
-            round: 2,
-            chunk_hash: [hash; 32],
-            selection: [0; 32],
-            phase: FinalityVotePhase::Precommit,
-        };
-        IndexedVote {
-            signature: key.sign(&data.signing_message(domain)).to_bytes(),
-            data,
-        }
-    };
-    let offence = SlashingEvidence::DoublePrecommit {
-        validator_index: 0,
-        vote_a: sign(1),
-        vote_b: sign(2),
-    };
+    let offence = double_precommit(engine.chain_spec().consensus_domain());
     let backend = ChainBackend::new(engine, prover);
+    backend.set_prove_foreign_blocks(foreign_prover);
     // Evidence intake queries runtime policy through the installed executor.
     backend.set_block_executor(neutrin0_runtime_host::WasmExecutor::embedded().unwrap());
     let (publisher, mut messages) = tokio::sync::mpsc::channel(8);
     backend.set_network_publisher(publisher);
     let _ = backend.ingest_slashing_evidence(offence).await;
+    if !foreign_prover {
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), messages.recv())
+                .await
+                .is_err()
+        );
+        backend.with_engine_mut_for_test(|engine| {
+            assert_eq!(
+                engine.store().evidence_reports().unwrap(),
+                Vec::<EvidenceReport>::new()
+            );
+        });
+        return;
+    }
     let report = tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             if let NetworkCommand::Publish {
@@ -578,6 +608,7 @@ async fn one_safety_receipt_per_identity_is_pooled_and_redundant_reports_are_ski
     };
     let second_receipt = prove_local_report(&engine, &prover, &second);
     let backend = ChainBackend::new(engine, prover);
+    backend.set_local_voter(voter);
     // Evidence intake queries runtime policy through the installed executor.
     backend.set_block_executor(neutrin0_runtime_host::WasmExecutor::embedded().unwrap());
     let (publisher, mut messages) = tokio::sync::mpsc::channel(8);
@@ -1447,6 +1478,11 @@ async fn imported_finality_selects_a_proven_archived_fork_and_survives_restart()
         )
         .unwrap();
     let backend = ChainBackend::new(follower, ready_prover());
+    // This test serves the replaced fork after finality; pruned nodes may
+    // collect that orphan as soon as asynchronous retention runs.
+    backend
+        .set_retention_policy(neutrin0_consensus_engine::RetentionPolicy::Archive)
+        .unwrap();
     let executor = tokio::task::spawn_blocking(WasmExecutor::embedded)
         .await
         .unwrap()

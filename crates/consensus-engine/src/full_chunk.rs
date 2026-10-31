@@ -20,9 +20,12 @@ mod carried_reports;
 mod commit;
 mod evidence;
 mod participation_votes;
+mod preparation;
 mod ratification;
 mod sanctions;
 mod witness;
+
+pub use preparation::PendingConsensusChunk;
 
 /// Outgoing consensus context, stored separately for certification and finality.
 #[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize)]

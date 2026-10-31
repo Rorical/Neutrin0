@@ -1,18 +1,12 @@
 //! Certifying a successor context from proven blocks and restoring the
 //! durable dependency on restart.
 
-use neutrin0_consensus_types::evidence::commitment;
 use neutrin0_proof_system::{ErasedBlockExecutor, ProofError, ProofSystem};
-use neutrin0_prover_chunk::{
-    consensus::{
-        ConsensusWitness, ValidatedConsensus, context_boundary, validate_consensus_with_context,
-    },
-    history::HistoricalChunk,
-};
+use neutrin0_prover_chunk::consensus::{ConsensusWitness, ValidatedConsensus};
 use neutrin0_storage::{Batch, Column, Database};
 
 use super::{CERTIFIED_EXECUTION_KEY, CertifiedExecution, MAX_CERTIFIED_BYTES};
-use crate::{BlockState, Engine, FinalizeError, StoreError, full_chunk::ConsensusState};
+use crate::{BlockState, Engine, FinalizeError, StoreError};
 
 impl<DB: Database> Engine<DB> {
     /// Authenticate a successor context from proven blocks and complete native BFT validation.
@@ -27,18 +21,25 @@ impl<DB: Database> Engine<DB> {
         proof_system: &P,
         executor: Option<&dyn ErasedBlockExecutor>,
     ) -> Result<bool, FinalizeError<DB::Error>> {
-        if prepared.proofs.len() != prepared.witness.blocks.len() {
-            return Err(ProofError::InvalidWitness.into());
-        }
-        for (proof, block) in prepared.proofs.iter().zip(&prepared.witness.blocks) {
-            if proof_system.verify_block_statement(proof, &block.public_inputs)?
-                != block.statement()
-            {
-                return Err(ProofError::PublicInputMismatch.into());
-            }
-        }
-        let (certified, validated) =
-            self.validate_execution_certificate(&prepared.witness, self.wall_clock_secs())?;
+        let checked = super::ValidatedExecutionChunk::validate(prepared, proof_system)?;
+        self.commit_execution_certificate(checked, executor)
+    }
+
+    /// Recheck owned validation against the live boundary, then durably publish
+    /// execution progress. The receipt and signature work has already finished.
+    ///
+    /// # Errors
+    /// Rejects stale sources, conflicting certification, replay or storage failure.
+    pub fn commit_execution_certificate(
+        &mut self,
+        checked: super::ValidatedExecutionChunk,
+        executor: Option<&dyn ErasedBlockExecutor>,
+    ) -> Result<bool, FinalizeError<DB::Error>> {
+        let super::ValidatedExecutionChunk {
+            mut certified,
+            validated,
+        } = checked;
+        self.require_execution_sources(&certified.witness)?;
         if let Some(previous) = &self.certified_execution {
             if previous.state != certified.state || previous.record.chunk != certified.record.chunk
             {
@@ -46,6 +47,7 @@ impl<DB: Database> Engine<DB> {
             }
             return Ok(false);
         }
+        certified.certified_at_secs = self.wall_clock_secs();
         // A certificate can precede the first finalized chunk. Persist the local
         // immutable trust profile before its durable dependency, so restart
         // never derives the consensus Guest identity from the witness itself.
@@ -84,12 +86,12 @@ impl<DB: Database> Engine<DB> {
         Ok(true)
     }
 
-    /// The certified value of `witness` with its complete consensus validation.
-    pub(super) fn validate_execution_certificate(
+    /// Check the exact persisted sources and trusted incoming boundary again
+    /// after off-lock validation. No caller-supplied verdict replaces this check.
+    fn require_execution_sources(
         &self,
         witness: &ConsensusWitness,
-        certified_at_secs: u64,
-    ) -> Result<(CertifiedExecution, ValidatedConsensus), FinalizeError<DB::Error>> {
+    ) -> Result<(), FinalizeError<DB::Error>> {
         let (context, seed, history) = self.consensus_boundary(witness.context.chunk_id)?;
         // Native certification has no recursive Fact receipt transport. Verify
         // every signature directly rather than trusting supplied Fact statements.
@@ -114,41 +116,16 @@ impl<DB: Database> Engine<DB> {
                 return Err(ProofError::InvalidWitness.into());
             }
         }
-        let validated =
-            validate_consensus_with_context(witness).map_err(|_| ProofError::InvalidWitness)?;
-        let record = HistoricalChunk {
-            runtime_code_hash: context.programs.runtime_code_hash,
-            block_guest_vk_digest: context.programs.execution.block,
-            start_boundary: validated.statement.start.commitment(),
-            chunk: neutrin0_prover_chunk::consensus::as_chunk(&validated.statement.chunk),
-            validators: context.active_validators,
-            seed,
-            finality: witness.finality_cert.clone(),
-        };
-        let mut frontier = history.frontier;
-        let root = frontier
-            .append(commitment(&record.evidence_context()))
-            .ok_or(ProofError::InvalidWitness)?;
-        let end = validated.statement.end;
-        if root != end.history_root
-            || context_boundary(&validated.next_context, end.seed)
-                .map_err(|_| ProofError::InvalidWitness)?
-                != end
-        {
-            return Err(ProofError::PublicInputMismatch.into());
-        }
-        let certified = CertifiedExecution {
-            witness: witness.clone(),
-            record,
-            certified_at_secs,
-            state: ConsensusState {
-                boundary: end,
-                next_context: validated.next_context.clone(),
-                next_seed: end.seed,
-                frontier,
-            },
-        };
-        Ok((certified, validated))
+        Ok(())
+    }
+
+    pub(super) fn validate_execution_certificate(
+        &self,
+        witness: &ConsensusWitness,
+        certified_at_secs: u64,
+    ) -> Result<(CertifiedExecution, ValidatedConsensus), FinalizeError<DB::Error>> {
+        self.require_execution_sources(witness)?;
+        super::validate_certificate(witness, certified_at_secs).map_err(Into::into)
     }
 
     pub(crate) fn restore_certified_execution(

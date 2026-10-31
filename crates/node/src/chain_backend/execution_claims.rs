@@ -45,6 +45,9 @@ where
     /// Examine a candidate that failed import on its results and, when its
     /// honest execution contradicts the header, prove that execution.
     pub(super) fn record_divergent_candidate(&self, block: &Block) {
+        if !self.proves_evidence() {
+            return;
+        }
         let Some(executor) = self.replay_executor_snapshot() else {
             return;
         };

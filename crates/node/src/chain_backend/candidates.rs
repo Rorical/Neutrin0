@@ -1,9 +1,10 @@
 //! Authenticated branch preparation behind advisory candidate discovery.
 
+mod preparation;
+
 use super::{
     ChainBackend, SyncBackendError, chunk_matches_context, not_available, rejected, storage_error,
 };
-use neutrin0_consensus_engine::Engine;
 use neutrin0_consensus_types::BftCandidate;
 use neutrin0_network::{Topic, rpc::CandidateByChunkResponse};
 use neutrin0_primitives::{ChunkId, Hash, blake3_256};
@@ -16,7 +17,7 @@ where
     DB::Error: core::fmt::Debug + core::fmt::Display + Send + Sync + 'static,
     P: ProofSystem + Send + Sync + 'static,
 {
-    pub(super) fn p2p_bft_candidate(
+    pub(super) async fn p2p_bft_candidate(
         &self,
         id: ChunkId,
         hash: Option<Hash>,
@@ -26,140 +27,57 @@ where
                 "candidate unavailable".into(),
             ));
         }
-        // Serves the certified, current, cached and fresh candidate in one locked pass.
-        let candidate = self.with_engine(|engine| {
-            if id != engine.finalized_next_chunk_id() {
-                return Err(SyncBackendError::NotAvailable(
-                    "candidate is outside the next chunk".into(),
-                ));
+        let slot = std::sync::Arc::clone(&self.candidate_slot)
+            .acquire_owned()
+            .await
+            .expect("candidate slot remains open");
+        let engine = std::sync::Arc::clone(&self.engine);
+        let prover = std::sync::Arc::clone(&self.proof_system);
+        let candidate = tokio::task::spawn_blocking(move || {
+            let _slot = slot;
+            let preparation::CandidateInputs {
+                pending,
+                candidate,
+                certified,
+            } = {
+                let engine = engine.lock().expect("engine mutex poisoned");
+                preparation::capture(&engine, id, hash)?
+            };
+            let mut prepared = pending
+                .prepare::<P, DB::Error>(prover.as_ref())
+                .map_err(not_available)?;
+            if let Some(certified) = certified {
+                engine
+                    .lock()
+                    .expect("engine mutex poisoned")
+                    .install_finality_certificate(&mut prepared, certified.finality_cert.clone())
+                    .map_err(not_available)?;
+                if prepared.witness != certified {
+                    return Err(rejected("certified candidate changed"));
+                }
             }
-            if let Some(certified) = self.certified_bft_candidate(engine, id, hash)? {
-                return Ok(certified);
+            let chunk =
+                neutrin0_prover_chunk::consensus::as_chunk(&prepared.candidate.execution.chunk);
+            if candidate
+                .as_ref()
+                .is_some_and(|candidate| candidate.chunk != chunk)
+            {
+                return Err(rejected("cached candidate changed"));
             }
-            if let Some(current) = self.current_bft_candidate(engine, id, hash)? {
-                return Ok(current);
+            if hash.is_some_and(|hash| chunk.hash() != hash) {
+                return Err(not_available("exact candidate is unavailable"));
             }
-            if let Some(cached) = self.cached_bft_candidate(engine, id, hash)? {
-                return Ok(cached);
-            }
-            self.fresh_bft_candidate(engine, id, hash)
-        })?;
+            Ok(candidate.unwrap_or(BftCandidate {
+                chunk,
+                round: 0,
+                justification: None,
+                selection: None,
+            }))
+        })
+        .await
+        .map_err(|error| not_available(format!("candidate worker failed: {error}")))??;
         Self::ensure_candidate_transmittable(&candidate)?;
         Ok(CandidateByChunkResponse { candidate })
-    }
-
-    /// The candidate of the certified execution, if it is the one asked for.
-    fn certified_bft_candidate(
-        &self,
-        engine: &Engine<DB>,
-        id: ChunkId,
-        hash: Option<Hash>,
-    ) -> Result<Option<BftCandidate>, SyncBackendError> {
-        let Some(witness) = engine.certified_execution_witness().filter(|witness| {
-            witness.finality_cert.chunk_id == id
-                && hash.is_none_or(|hash| witness.finality_cert.chunk_hash == hash)
-        }) else {
-            return Ok(None);
-        };
-        engine
-            .prepare_certified_execution(self.proof_system.as_ref())
-            .map_err(not_available)?;
-        let proposal = &witness.finality_cert.proposal;
-        Ok(Some(BftCandidate {
-            chunk: proposal.chunk.clone(),
-            round: proposal.round,
-            justification: proposal.valid_quorum.clone(),
-            selection: proposal
-                .valid_quorum
-                .is_some()
-                .then(|| proposal.payment_selection()),
-        }))
-    }
-
-    /// The open session's current candidate, if it is the one asked for.
-    fn current_bft_candidate(
-        &self,
-        engine: &Engine<DB>,
-        id: ChunkId,
-        hash: Option<Hash>,
-    ) -> Result<Option<BftCandidate>, SyncBackendError> {
-        let current = engine.bft_candidate(id);
-        let Some(candidate) =
-            current.filter(|candidate| hash.is_none_or(|hash| candidate.chunk.hash() == hash))
-        else {
-            return Ok(None);
-        };
-        // Reverify stored receipts under the running program before advertising.
-        engine
-            .prepare_consensus_chunk_on_branch(
-                id,
-                candidate.chunk.end_block_hash,
-                None,
-                self.proof_system.as_ref(),
-            )
-            .map_err(not_available)?;
-        Ok(Some(candidate))
-    }
-
-    /// A chunk the open session cached under the exact hash asked for.
-    fn cached_bft_candidate(
-        &self,
-        engine: &Engine<DB>,
-        id: ChunkId,
-        hash: Option<Hash>,
-    ) -> Result<Option<BftCandidate>, SyncBackendError> {
-        let Some(cached) = hash.and_then(|hash| {
-            engine
-                .bft_session(id)
-                .and_then(|session| session.candidate_by_hash(&hash))
-                .cloned()
-        }) else {
-            return Ok(None);
-        };
-        let prepared = engine
-            .prepare_consensus_chunk_on_branch(
-                id,
-                cached.end_block_hash,
-                None,
-                self.proof_system.as_ref(),
-            )
-            .map_err(not_available)?;
-        if neutrin0_prover_chunk::consensus::as_chunk(&prepared.candidate.execution.chunk) != cached
-        {
-            return Err(SyncBackendError::Rejected(
-                "cached candidate changed".into(),
-            ));
-        }
-        Ok(Some(BftCandidate {
-            chunk: cached,
-            round: 0,
-            justification: None,
-            selection: None,
-        }))
-    }
-
-    /// The candidate prepared from the proven range right now.
-    fn fresh_bft_candidate(
-        &self,
-        engine: &Engine<DB>,
-        id: ChunkId,
-        hash: Option<Hash>,
-    ) -> Result<BftCandidate, SyncBackendError> {
-        let prepared = engine
-            .prepare_consensus_chunk(id, self.proof_system.as_ref())
-            .map_err(not_available)?;
-        let chunk = neutrin0_prover_chunk::consensus::as_chunk(&prepared.candidate.execution.chunk);
-        if hash.is_some_and(|hash| chunk.hash() != hash) {
-            return Err(SyncBackendError::NotAvailable(
-                "exact candidate is unavailable".into(),
-            ));
-        }
-        Ok(BftCandidate {
-            chunk,
-            round: 0,
-            justification: None,
-            selection: None,
-        })
     }
 
     fn ensure_candidate_transmittable(candidate: &BftCandidate) -> Result<(), SyncBackendError> {
@@ -316,7 +234,7 @@ where
         {
             return;
         }
-        let Ok(response) = self.p2p_bft_candidate(id, None) else {
+        let Ok(response) = self.p2p_bft_candidate(id, None).await else {
             return;
         };
         let Ok(data) = borsh::to_vec(&response.candidate) else {

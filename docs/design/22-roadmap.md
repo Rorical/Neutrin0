@@ -120,8 +120,9 @@ and known in advance ([randomness](15-randomness.md)).
 - Erasure-coded data availability and sampling.
 - Authenticated state, header and transaction query proofs for light clients, and
   a browser or mobile verifier distribution ([light clients](14-light-clients.md)).
-- Measured bounds on real proving cost: statement recursion, objective block-proof
-  rejection, larger validator sets and sustained multi-chunk operation.
+- Sustained proving-cost bounds for full-gas blocks, default 128-block chunks,
+  larger validator sets and broader rejection inputs. Single-GPU fixture
+  measurements are available in [GPU proving](../gpu-proving.md#validated-hardware-and-results).
 - A real-proof test of an execution-program switch and of upgrade with snapshot
   bootstrap; only a native preflight covers the switch
   (`governed_upgrade_native_preflight_checks_waiting_chunks` in
@@ -133,6 +134,57 @@ and known in advance ([randomness](15-randomness.md)).
   inventory and native receipt interpretation in the CLI.
 - A block explorer frontend over the indexer.
 
+## Verification evidence
+
+The RTX 4090 D run passed all six real-proof cases:
+recursive History, two-Block consensus recursion, Evidence/Fact composition with
+monetary and consensus effects, and both verdict polarities for real Block
+receipts, plus both signed-transfer Block proving cases. The four recursive
+gates passed independent CPU receipt verification. The locked workspace
+build passed, with 1,746 ordinary tests passing and no failures. The GPU-enabled
+node/runtime-host suite passed 460 tests with no failures. Strict Clippy for both
+build configurations, Rustdoc with warnings denied, format and monitoring checks
+passed.
+All eight opt-in final-ELF execution/parity cases, three PostgreSQL integration
+cases, three Solidity tests and the Forge/Cast HTTP wallet fixture passed.
+An explicit `registered_validator_exits_after_unstake` run passed with mock Block
+proofs and native consensus validation. This fixture covers the exit epoch
+transition under its fixed committee and leader sequence. The tested artifact
+fingerprints and measurement scope are recorded in
+[GPU proving](../gpu-proving.md#validated-hardware-and-results).
+
+A single-validator release network also finalized two consecutive chunks with
+real proofs after resuming its existing database and signing journals.
+A separate single-validator release network finalized two consecutive 64-block
+chunks, using 10-second slots and no injected user transactions. The second
+chunk finalized after a host scheduling update and a restart with the same
+database, signing journals and Guest fingerprints.
+Eight EIP-1559 transactions on that network covered wallet funding, transfers,
+contract deployment, state updates from both wallets and an expected revert.
+All eight reached real-proof finality. Balance and gas accounting, nonces,
+bytecode, event logs, historical state queries and block/receipt consistency
+checks passed.
+
+Further real-network application tests finalized 52 additional transactions,
+including OpenZeppelin ERC-20/ERC-721 behavior, contract rollback and storage
+semantics, ethers/viem interoperability, ERC-2612 permits and all 18 Osaka
+precompiles. Expected reverts, exact fee accounting, canonical projections and
+historical state checks passed. The application and wallet groups finalized at
+height 832, the precompile group at height 896 and a zero-amount transfer with
+WebSocket and polling-filter checks at height 960. Each group exported its
+covering History proof. These functional results and their scope are recorded in
+[GPU proving](../gpu-proving.md#validated-hardware-and-results).
+
+The RPC and consensus-lock repair passed the locked workspace build, ordinary
+suite (1,758 passed, no failures, 13 ignored), strict all-target Clippy and format
+checks on macOS ARM64, plus the Linux CUDA release build. On the same running
+network, four HTTP clients completed 1,140 mixed batches with 4,560 successful
+responses and no failures across execution certification and real Chunk finality
+at height 1,536. A real ERC-20 transfer passed canonical header/log subscriptions,
+polling filters, exact fee and nonce accounting, and covering History export.
+Database, signing journals and Guest/WASM fingerprints were preserved. These
+results cover the tested load and finalization boundary.
+
 ## Open verification work
 
 A real-proof result applies only to the Guest ELFs it ran on, and any change to a
@@ -140,28 +192,15 @@ Guest-side crate changes every pinned program identity, so each check below must
 pass on the final sources.
 
 - The locked workspace build, tests, strict Clippy and format checks that CI runs.
-- The ignored real-proof tests in `neutrin0-runtime-host`, run with
-  `cargo test --locked -p neutrin0-runtime-host --test <file stem> -- --ignored <name>`.
-  CUDA variants need `--features cuda` and read `NEUTRIN0_CUDA_DEVICE`;
-  `receipt_verdicts_real_compressed` selects its prover with
-  `NEUTRIN0_PROVING_BACKEND` (`cpu` or `cuda`).
-
-  | Test file | Test | Proves |
-  | --- | --- | --- |
-  | `history_recursion.rs` | `history_real_compressed_chunk_recursion`, `history_cuda_compressed_chunk_recursion` | Block → Chunk → Chunk recursion verified as a History proof; false ratified receipts cannot prove |
-  | `consensus_chunk.rs` | `consensus_guest_real_compressed_recursion` | Compressed Block receipts recursively verified by a consensus chunk |
-  | `evidence_pipeline.rs` | `evidence_block_chunk_real_compressed_recursion`, `evidence_block_chunk_cuda_compressed_recursion` | Evidence → Block → Chunk recursion with the sanction's monetary and consensus effects |
-  | `evidence_pipeline.rs` | `receipt_verdicts_real_compressed` | Block receipt acceptance by Evidence recursion and worst-case rejection in the Fact Guest |
-  | `prove_verify.rs` | `real_prover_full_pipeline`, `real_prover_demonstration` | One Block receipt proved and verified (prover from `SP1_PROVER`) |
-
+- The ignored real-proof tests in `neutrin0-runtime-host`: recursive History,
+  Block-to-Chunk composition, Evidence/Fact composition, receipt verdicts and
+  signed-transfer Block proofs. [Proving acceptance](../gpu-proving.md#gpu-tests)
+  lists the test names, commands and hardware requirements. CPU execution,
+  parity checks and independent receipt verification remain.
   The other ignored tests in `evm_runtime.rs` and `evm_parity.rs` execute the final
-  Block ELF in SP1 without proving and compare it with native and WASM execution.
+  Block ELF without proving and compare it with native and WASM execution.
 - Multi-validator restart, partitions, delayed signed-source retrieval,
   omitted-signer acknowledgement, committee churn and upgrade or snapshot recovery.
-  The single-voter node harness cannot finalize an exit chunk, so
-  `registered_validator_exits_after_unstake` in
-  [`validator_activation_exit.rs`](../../crates/node/tests/validator_activation_exit.rs)
-  stays ignored until a multi-node BFT driver exists.
 - An independent review of the BFT safety and liveness model, proposer withholding
   and optimistic fork properties.
 
@@ -170,7 +209,7 @@ pass on the final sources.
 Each stage starts only after the previous stage's exit criteria hold on the same
 sources and ELFs. Any Guest, wire or chain-specification change returns to stage 1.
 
-1. Real-proof checks. Run every real-proof test above on the final sources. Exit:
+1. Real-proof checks. Run the real-proof acceptance suite on the final sources. Exit:
    every test passes and every receipt verifies under the independent verifier.
 2. Closed devnet. Four to seven team-operated validators on separate GPU hosts in
    at least two networks, using the default specification (128-block chunks), with

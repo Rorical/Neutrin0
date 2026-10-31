@@ -8,3 +8,5 @@ mod reports;
 mod worker;
 
 use super::ChainBackend;
+
+pub(super) use body::selected_body;

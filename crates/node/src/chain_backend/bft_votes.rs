@@ -67,7 +67,7 @@ where
             self.defer_bft_vote(vote);
             return Ok(());
         }
-        let Some(actions) = self.observe_value_vote(&vote, subnet)? else {
+        let Some(actions) = self.observe_value_vote(&vote, subnet).await? else {
             self.defer_bft_vote(vote);
             return Ok(());
         };
@@ -166,7 +166,7 @@ where
 
     /// Feed the vote to its session and collect the actions it triggers;
     /// `None` when the vote can count only once the round's proposal arrives.
-    fn observe_value_vote(
+    async fn observe_value_vote(
         &self,
         vote: &FinalityVote,
         subnet: Option<u8>,
@@ -176,7 +176,8 @@ where
                 .bft_session(vote.data.chunk_id)
                 .is_some_and(neutrin0_consensus_engine::BftSession::local_precommitted)
         }) {
-            self.prevalidate_bft_signing_candidate(vote.data.chunk_id);
+            self.prevalidate_bft_signing_candidate(vote.data.chunk_id)
+                .await;
         }
         self.with_live_engine_mut(|engine| {
             self.validate_live_vote_signing_candidate(engine, vote.data.chunk_id)?;

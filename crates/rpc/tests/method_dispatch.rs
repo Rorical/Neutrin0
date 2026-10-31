@@ -40,6 +40,39 @@ async fn call_named(
     )
 }
 
+#[tokio::test]
+async fn ethereum_zero_argument_methods_accept_omitted_null_and_empty_params() {
+    let module = build_module(Arc::new(MockBackend::default())).unwrap();
+    for params in [None, Some(Value::Null), Some(json!([]))] {
+        let mut request = json!({"jsonrpc": "2.0", "id": 1, "method": "eth_chainId"});
+        if let Some(params) = params {
+            request["params"] = params;
+        }
+        let (response, _) = module
+            .raw_json_request(&request.to_string(), 1)
+            .await
+            .unwrap();
+        let response: Value = serde_json::from_str(response.get()).unwrap();
+        assert_eq!(response["result"], "0x7", "{response}");
+        assert!(response.get("error").is_none());
+    }
+}
+
+#[tokio::test]
+async fn ethereum_empty_params_still_enforce_argument_shapes_and_counts() {
+    let module = build_module(Arc::new(MockBackend::default())).unwrap();
+    for params in [json!([null]), json!({})] {
+        let error = call_named(&module, "eth_chainId", params)
+            .await
+            .expect_err("no arguments accepted");
+        assert_eq!(error["code"], -32602);
+    }
+    let error = call_named(&module, "eth_getBalance", Value::Null)
+        .await
+        .expect_err("an address is required");
+    assert_eq!(error["code"], -32602);
+}
+
 struct MockBackend {
     chain_id: ChainId,
     head_hash: BlockHash,
@@ -48,6 +81,7 @@ struct MockBackend {
     query_error: Option<QueryError>,
     runtime_error: Option<RuntimeCallError>,
     runtime_delay: Option<Duration>,
+    status_delay: Option<Duration>,
 }
 
 impl Default for MockBackend {
@@ -59,6 +93,7 @@ impl Default for MockBackend {
             query_error: None,
             runtime_error: None,
             runtime_delay: None,
+            status_delay: None,
             runtime_call_response: RuntimeCallResponse {
                 code: 0,
                 payload: vec![1, 2, 3, 4],
@@ -82,6 +117,9 @@ impl RpcBackend for MockBackend {
         self.chain_id
     }
     fn runtime_code_hash(&self) -> Option<neutrin0_primitives::Hash> {
+        if let Some(delay) = self.status_delay {
+            std::thread::sleep(delay);
+        }
         if self.runtime_attached {
             Some([7; 32])
         } else {
@@ -504,4 +542,27 @@ async fn history_retention_reports_actual_availability_and_finality() {
             "finalized_chunks": 12,
         })
     );
+}
+
+#[tokio::test]
+async fn blocking_status_reads_leave_the_transport_executor_responsive() {
+    let backend = MockBackend {
+        status_delay: Some(Duration::from_millis(250)),
+        ..MockBackend::default()
+    };
+    let module = build_module(Arc::new(backend)).unwrap();
+    let status = call_named(&module, "system_info", json!([]));
+    tokio::pin!(status);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut status)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        call_named(&module, "system_chainId", json!([]))
+            .await
+            .unwrap(),
+        7
+    );
+    assert!(status.await.unwrap()["runtime_code_hash"].is_string());
 }

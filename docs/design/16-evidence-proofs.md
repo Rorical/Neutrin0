@@ -451,11 +451,24 @@ until a proof-bound report is ready.
 
 ## Fact cache and scheduling
 
-Fact receipts are local acceleration artifacts and are never gossiped. A
-bounded queue of eight jobs, each at most 2 MiB, feeds one blocking worker. The worker coalesces
-up to eight further queued groups for the same fact program without a timer,
-deduplicates facts and proves misses in groups of at most 64; a full queue skips
-the optional precomputation, and evidence proving fills missing facts on demand.
+Fact receipts are local acceleration artifacts and are never gossiped.
+Only validators and nodes explicitly opting into foreign-block proving enqueue
+proactive Facts from headers and BFT messages. Reporters obtain the Facts needed
+for an Evidence proof on demand. Ordinary full and archive nodes retain and
+relay admissible raw evidence and verify incoming receipts without launching
+Fact, Evidence or Chunk proof jobs. An executing node also needs proving duties
+to generate the honest Block receipt for a divergent-execution claim; every
+node may still retain a claim supported by a received receipt.
+
+A bounded queue of eight jobs, each at most 2 MiB, feeds one blocking worker.
+Before taking its next batch, optional precomputation waits while local Block
+proof jobs are queued or running, including the handoff between consecutive
+native calls. Existing device waiters retain their admission priority, and a
+running native call is not preempted. Once the Block queue drains,
+the worker coalesces up to eight further queued groups for the same fact program
+without a timer, deduplicates facts and proves misses in groups of at most 64.
+A full queue skips the optional precomputation, and evidence proving fills
+missing facts on demand.
 Facts are proven under the fact program of the chunk being built.
 
 The cache keeps at most 256 receipts and 32 MiB per fact program in
@@ -476,25 +489,20 @@ bounds attachment plus ordinary transaction bytes.
 
 Native execution, execution-only Guest runs and mock recursion do not establish
 real compressed composition, and mock SP1 receipts are never accepted by the
-production evidence verifier. The `#[ignore]`d tests in
-`crates/runtime-host/tests/evidence_pipeline.rs` establish it:
+production evidence verifier. The ignored integration tests in
+`crates/runtime-host/tests/evidence_pipeline.rs` cover:
 
-- `evidence_block_chunk_real_compressed_recursion` (CPU) proves the first chunk,
-  then FactProof, batched EvidenceProof, a block that recursively verifies the
-  statement and executes its deduction, and the successor chunk that verifies the
-  first chunk's proof and applies the sanction. It starts from a trusted
-  finalized history fixture.
-- `evidence_block_chunk_cuda_compressed_recursion` runs the same composition on
-  an NVIDIA GPU (`cuda` feature; `NEUTRIN0_CUDA_DEVICE` selects the device) and
-  verifies each stage with the CPU verifier.
-- `receipt_verdicts_real_compressed` takes one real Block receipt through both
-  polarities: acceptance by Evidence recursion for `InvalidExecutionClaim`, and
-  worst-case rejection in the Fact Guest for `InvalidProofSigning`
-  (`NEUTRIN0_PROVING_BACKEND=cpu|cuda`).
+- The first chunk, then FactProof, batched EvidenceProof, a block that verifies
+  the statement and executes its deduction, and a successor chunk that verifies
+  the first chunk's proof and applies the sanction. Each stage is independently
+  verified from a trusted finalized history fixture.
+- Both polarities of a real Block receipt: acceptance by Evidence recursion for
+  `InvalidExecutionClaim`, and worst-case rejection in the Fact Guest for
+  `InvalidProofSigning`.
 
-The composition tests save each verified stage under
-`target/proof-acceptance/evidence-pipeline` (`NEUTRIN0_EVIDENCE_GATE_DIR`
-overrides it). A stage identity binds the circuit version, the stage ELF, the
-exact inputs and the expected statement; a restart reuses a stage only after
-verifying it against that statement, and corrupt stages fail the run. A result
-for one ELF never carries over to a changed program.
+The tests save verified stages under `target/proof-acceptance/evidence-pipeline`.
+A stage identity binds the circuit version, the stage ELF, the exact inputs and
+the expected statement. A restart reuses a stage only after verifying it against
+that statement; corrupt stages fail the run. A result for one ELF never carries
+over to a changed program. Commands and hardware requirements are in
+[proving acceptance](../gpu-proving.md#gpu-tests).

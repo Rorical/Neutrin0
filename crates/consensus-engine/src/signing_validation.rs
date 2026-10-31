@@ -20,6 +20,7 @@ use neutrin0_proof_system::{ProofError, ProofSystem};
 use neutrin0_prover_chunk::consensus::{ConsensusWitness, as_chunk, validate_candidate};
 use neutrin0_storage::Database;
 
+use crate::full_chunk::PendingConsensusChunk;
 use crate::{Engine, FinalizeError};
 
 /// Retained verdicts: the open value plus a few superseded round selections.
@@ -50,6 +51,31 @@ pub struct ValidatedSigning {
 pub struct PendingSigning {
     inputs: SigningInputs,
     witness: ConsensusWitness,
+}
+
+/// Owned receipt sources for pre-signing validation outside the engine lock.
+pub struct PendingSigningInputs {
+    inputs: SigningInputs,
+    pending: PendingConsensusChunk,
+}
+
+impl PendingSigningInputs {
+    /// Verify the receipts and complete candidate before recording a verdict.
+    ///
+    /// # Errors
+    /// Rejects malformed receipts, invalid consensus or a different session value.
+    pub fn validate<P: ProofSystem, E>(
+        self,
+        prover: &P,
+    ) -> Result<ValidatedSigning, FinalizeError<E>> {
+        let (witness, _) = self.pending.witness(prover)?;
+        PendingSigning {
+            inputs: self.inputs,
+            witness,
+        }
+        .validate()
+        .map_err(Into::into)
+    }
 }
 
 impl PendingSigning {
@@ -127,19 +153,38 @@ impl<DB: Database> Engine<DB> {
         chunk_id: ChunkId,
         proof_system: &P,
     ) -> Result<Option<PendingSigning>, FinalizeError<DB::Error>> {
+        let Some(pending) = self.pending_bft_signing_inputs(chunk_id, proof_system)? else {
+            return Ok(None);
+        };
+        let (witness, _) = pending.pending.witness(proof_system)?;
+        Ok(Some(PendingSigning {
+            inputs: pending.inputs,
+            witness,
+        }))
+    }
+
+    /// Capture an unchecked open value without decoding or verifying its backend
+    /// proofs. The returned inputs are validated without holding the engine.
+    ///
+    /// # Errors
+    /// Returns unavailable sources or an unsupported backend.
+    pub fn pending_bft_signing_inputs<P: ProofSystem>(
+        &self,
+        chunk_id: ChunkId,
+        proof_system: &P,
+    ) -> Result<Option<PendingSigningInputs>, FinalizeError<DB::Error>> {
         let Some(inputs) = self.signing_inputs(chunk_id, proof_system)? else {
             return Ok(None);
         };
         if self.signing_validated(&inputs, proof_system) {
             return Ok(None);
         }
-        let (witness, _) = self.consensus_witness_on_branch(
+        let pending = self.pending_consensus_chunk(
             chunk_id,
             inputs.end_block_hash,
             inputs.receipts.as_deref(),
-            proof_system,
         )?;
-        Ok(Some(PendingSigning { inputs, witness }))
+        Ok(Some(PendingSigningInputs { inputs, pending }))
     }
 
     /// Retain a verdict. One from an earlier boundary generation never
